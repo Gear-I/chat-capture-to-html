@@ -69,10 +69,13 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             continue
         swatch = f'<span class="sw" style="background:{_hex(m.color)}" title="bubble colour {_hex(m.color)}"></span>' if m.color else ""
         who = m.sender_name or sender[m.side]
+        side_note = ""
+        if m.side != "center":
+            named = ", name read from screenshot" if m.sender_name else ""
+            side_note = f' <span class="side">({m.side}{named})</span>'
         rows.append(
             f'<div class="msg {m.side}{" warn" if bad else ""}" id="m{n}">'
-            f'<div class="who">{swatch}{e(who)}'
-            f'{f" <span class=side>({m.side}{", name read from screenshot" if m.sender_name else ""})</span>" if m.side != "center" else ""}</div>'
+            f'<div class="who">{swatch}{e(who)}{side_note}</div>'
             f'<div class="bubble" style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
             f'<div class="foot"><a class="n" href="#m{n}">#{n}</a>'
             f'{f" · {e(m.time)}" if m.time else ""} · <span class="conf{lowc}">{conf}</span> · '

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chat-capture-to-html"
+version = "0.1.0"
+description = "Turn a UFADE Chat capture folder into a hash-linked HTML chat using offline OCR"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = ["numpy", "pillow", "opencv-python-headless"]
+
+[project.optional-dependencies]
+rapidocr = ["rapidocr-onnxruntime"]
+test = ["pytest"]
+
+[project.scripts]
+chat-capture-to-html = "chat_capture_to_html.cli:main"
+
+[tool.setuptools]
+packages = ["chat_capture_to_html"]

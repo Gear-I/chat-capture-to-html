@@ -1,2 +1,79 @@
 # chat-capture-to-html
+
 Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each screenshot, merges overlapping shots, works out the sender from bubble side and colour, and links every message back to its source screenshot and SHA-256 hash.
+
+## What it does
+
+1. **Reads the capture.** UFADE stores each chat as `screenshots/<app>/<chat>/<chat>_MM_DD_YYYY_HH_MM_SS[_n].png`, with a `.txt` file next to each PNG holding its SHA-256. You can point the tool at one chat folder, or at `screenshots/` to process every chat in it.
+2. **Checks every hash.** It recomputes the SHA-256 of each PNG and compares it with the `.txt` file. Each shot is marked *verified*, *HASH MISMATCH*, *no hash file* or *hash file unreadable*. It also lists `.txt` files that have no PNG.
+3. **Lines up the overlapping shots.** It detects the fixed header and input bar, then matches the scrolling part of consecutive screenshots row by row. This places every shot on one vertical axis. It works whether UFADE scrolled up or down. If two shots don't overlap, the report shows a visible gap marker instead of guessing.
+4. **Finds the bubbles and the sender.** A bubble is a smooth area whose colour differs from the background. Right-hand bubbles are the device owner; left-hand bubbles are the other party; centred items are dates and system notices. Small text just above a left-hand bubble (group chats) is used as the sender's name. The report shows each bubble's colour and a colour legend, and warns if one colour appears on both sides.
+5. **OCRs offline.** Tesseract, or RapidOCR as a fallback. Each bubble that appears in several shots is read once, from a verified shot where it is fully visible. A bubble taller than the screen is read from each part and joined. Apps that print a time inside the bubble (e.g. WhatsApp) get that time split into its own field.
+6. **Writes the HTML.** Every message carries:
+   - links to every screenshot it appears in; clicking one opens the shot with the bubble outlined;
+   - the file name, SHA-256 and verification result of the shot its text was read from;
+   - the OCR confidence.
+
+   At the end is a table of all screenshots with their computed and recorded hashes. Screenshots are linked, not copied or embedded, so the report never holds an altered copy of the evidence.
+
+The exit code is `2` when any hash fails or a hash file is orphaned, `3` when no OCR engine is available, and `0` otherwise.
+
+## Install (Windows)
+
+1. Python 3.10 or newer.
+2. Tesseract: install the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki) and tick **German** under *Additional language data*. The tool finds it in `C:\Program Files\Tesseract-OCR` by itself.
+3. In this folder:
+
+```bash
+py -m pip install .
+```
+
+Optional fallback engine (no Tesseract needed; weaker on umlauts and short words):
+
+```bash
+py -m pip install .[rapidocr]
+```
+
+## Use
+
+```bash
+chat-capture-to-html "C:\ufade-test\screenshots" -o C:\ufade-reports
+```
+
+This writes one `<app>_<chat>.html` per chat folder. For a single chat you can name the file:
+
+```bash
+chat-capture-to-html "C:\ufade-test\screenshots\WhatsApp\Anna" -o C:\ufade-reports\anna.html --me "Owner name" --them "Anna"
+```
+
+Keep the report outside the capture folder, so the evidence folder holds only what UFADE wrote. The links stay relative as long as the report and the captures are on the same drive.
+
+| Option | |
+|---|---|
+| `--me`, `--them` | Labels for right-hand and left-hand bubbles (default: `Device owner` and the chat folder name) |
+| `--ocr auto\|tesseract\|rapidocr` | OCR engine (default `auto`: Tesseract if installed) |
+| `--lang deu+eng` | Tesseract languages (default: `deu+eng` where installed) |
+| `--tesseract PATH` | Path to `tesseract.exe` if it is somewhere unusual |
+| `--top N`, `--bottom N` | Pixels of fixed header/footer to ignore, if detection gets them wrong |
+| `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
+
+## Limits
+
+- OCR text is a reading aid; the screenshot is the evidence. Emoji are not recognised, and `I` sometimes comes out as `|`. Low-confidence messages are highlighted.
+- Photos, stickers and voice messages are not bubbles of flat colour, so they are not listed as messages. They are still visible in the linked screenshots.
+- Sender is decided by side; a bubble colour on both sides is flagged, not corrected.
+- Detecting the header assumes at least two screenshots of the same size. Shots of a different size are skipped and reported.
+
+## Tests
+
+`tests/make_fixture.py` builds synthetic captures with no real messages: iMessage-style and WhatsApp-style, with a fixed wallpaper, a clock that changes between shots, and one deliberately wrong hash. The end-to-end tests compare the result with the known conversation.
+
+```bash
+py -m pip install .[test]
+```
+
+```bash
+py -m pytest
+```
+
+Real capture data stays out of the repository (`screenshots/` is git-ignored).

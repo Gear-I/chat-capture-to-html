@@ -222,3 +222,9 @@ __marimo__/
 # UFADE Chat capture test data (real messages) and Visual Studio files
 screenshots/
 .vs/
+
+# Python build output
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/

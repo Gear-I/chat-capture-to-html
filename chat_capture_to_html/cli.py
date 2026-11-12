@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+from . import __version__
+from .capture import HASH_OK, find_capture_folders, load_capture
+from .ocr import OcrError, make_engine
+from .pipeline import build_chat
+from .report import render
+
+
+def _safe(name: str) -> str:
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).strip(" .") or "chat"
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        prog="chat-capture-to-html",
+        description="Turn a UFADE Chat capture folder into an HTML chat. Every PNG is checked against its "
+                    ".txt SHA-256, OCR runs offline, and each message links to its screenshot and hash.")
+    p.add_argument("folder", type=Path, help="a chat folder (screenshots/<app>/<chat>) or any folder above it")
+    p.add_argument("-o", "--output", type=Path,
+                   help="HTML file to write (one chat) or folder for the reports (several chats). Default: current folder")
+    p.add_argument("--me", default="Device owner", help="label for right-hand bubbles (default: %(default)s)")
+    p.add_argument("--them", help="label for left-hand bubbles (default: the chat folder name)")
+    p.add_argument("--ocr", choices=["auto", "tesseract", "rapidocr"], default="auto",
+                   help="OCR engine; auto prefers Tesseract, then RapidOCR")
+    p.add_argument("--lang", help="Tesseract languages, e.g. deu+eng (default: deu+eng where installed)")
+    p.add_argument("--tesseract", help="path to tesseract executable")
+    p.add_argument("--top", type=int, help="pixels of fixed header to ignore (default: detected)")
+    p.add_argument("--bottom", type=int, help="pixels of fixed footer to ignore (default: detected)")
+    p.add_argument("--verified-only", action="store_true", help="leave out screenshots whose hash does not verify")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    a = p.parse_args(argv)
+
+    say = (lambda s: None) if a.quiet else (lambda s: print(s, file=sys.stderr))
+    if not a.folder.is_dir():
+        p.error(f"not a folder: {a.folder}")
+    folders = find_capture_folders(a.folder)
+    if not folders:
+        p.error(f"no PNG screenshots under {a.folder}")
+    try:
+        engine = make_engine(a.ocr, a.tesseract, a.lang)
+    except OcrError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 3
+    say(f"OCR: {engine.describe()}")
+
+    single = len(folders) == 1
+    if a.output is None:
+        out_dir, out_file = Path.cwd(), None
+    elif single and a.output.suffix.lower() in (".html", ".htm"):
+        out_dir, out_file = a.output.parent, a.output
+    else:
+        out_dir, out_file = a.output, None
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    worst = 0
+    written = []
+    for folder in folders:
+        cap = load_capture(folder)
+        bad = [s for s in cap.shots if s.status != HASH_OK]
+        say(f"\n{folder}: {len(cap.shots)} screenshots, {len(cap.shots) - len(bad)} hash-verified")
+        for s in bad:
+            say(f"  ! {s.path.name}: {s.status} — {s.note}")
+        if bad or cap.orphan_hash_files:
+            worst = 2
+        target = out_file or out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}.html"
+        if folder.resolve() in target.resolve().parents:
+            say("  ! writing the report inside the evidence folder")
+        res = build_chat(cap, engine, a.top, a.bottom, include_unverified=not a.verified_only, progress=lambda s: say("  " + s))
+        target.write_text(render(res, target, a.me, a.them or cap.chat), encoding="utf-8")
+        say(f"  {sum(1 for m in res.messages if m.kind == 'bubble')} messages -> {target}")
+        for w in res.warnings:
+            say(f"  ! {w}")
+        written.append(target)
+    return worst

@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# UFADE Chat capture test data (real messages) and Visual Studio files
+screenshots/
+.vs/

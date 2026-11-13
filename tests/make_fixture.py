@@ -1,6 +1,10 @@
 """Build a synthetic UFADE Chat capture folder (no real messages) for tests.
 
-    python tests/make_fixture.py OUT_DIR [--style imessage|whatsapp|both]
+    python tests/make_fixture.py OUT_DIR [--style imessage|ios|ipad|whatsapp|both]
+
+``ios`` is iMessage drawn the way iOS really composites it: the chat scrolls
+under translucent blurred bars and blue bubbles are shaded by screen position.
+``ipad`` is the same chat on an iPad, beside the conversation list.
 
 Writes ``OUT_DIR/screenshots/<App>/<chat>/`` with overlapping screenshots taken
 while "scrolling up" from the newest message, a ``.txt`` SHA-256 next to each PNG
@@ -16,7 +20,7 @@ import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 W, H = 1170, 2532
 HEADER, FOOTER = 300, 250
@@ -62,17 +66,20 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style):
+def render_chat(style, rounds=1):
+    """Draw the whole chat as one tall image. With rounds > 1 the conversation
+    repeats, each round numbered so no two messages look the same."""
+    convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
     wa = style == "whatsapp"
     bg = (239, 234, 226) if wa else (255, 255, 255)
     col = {"left": (255, 255, 255) if wa else (233, 233, 235), "right": (217, 253, 211) if wa else (10, 132, 255)}
     fg = {"left": (17, 27, 33) if wa else (0, 0, 0), "right": (17, 27, 33) if wa else (255, 255, 255)}
     f, fs = font(51), font(36)
-    tall = Image.new("RGB", (W, 6000), bg)
+    tall = Image.new("RGB", (W, 6000 * rounds), bg)
     d = ImageDraw.Draw(tall)
     y, prev, expected = 40, None, []
     minute = 9 * 60 + 2
-    for kind, text in CONVO:
+    for kind, text in convo:
         if kind == "date":
             y += 40
             tw = d.textlength(text, font=fs)
@@ -102,7 +109,64 @@ def render_chat(style):
     return tall.crop((0, 0, W, y + 60)), expected, bg
 
 
+def _ios_screen(tall, top, bg, clock, title, gradient):
+    """Like real iOS Messages: the chat runs under translucent, blurred bars,
+    and blue bubbles are shaded by their position on the screen."""
+    img = Image.new("RGB", (W, H), bg)
+    src_top = top - HEADER
+    win = tall.crop((0, max(src_top, 0), W, min(src_top + H, tall.height)))
+    img.paste(win, (0, max(-src_top, 0)))
+    if gradient:
+        import numpy as np
+        a = np.asarray(img).astype(np.int16)
+        blue = (np.abs(a - np.array([10, 132, 255])).sum(axis=2) < 40)
+        ys = np.arange(H)[:, None].repeat(W, axis=1) / H
+        grad = np.stack([10 + 110 * ys, 132 - 70 * ys, 255 - 20 * ys], axis=2)
+        a[blue] = grad[blue]
+        img = Image.fromarray(a.clip(0, 255).astype("uint8"))
+    for y0, y1 in ((0, HEADER), (H - FOOTER, H)):
+        region = img.crop((0, y0, W, y1)).filter(ImageFilter.GaussianBlur(30))
+        img.paste(Image.blend(region, Image.new("RGB", region.size, (247, 247, 247)), 0.8), (0, y0))
+    d = ImageDraw.Draw(img)
+    d.text((80, 50), clock, font=font(48), fill=(0, 0, 0))
+    tw = d.textlength(title, font=font(54))
+    d.text(((W - tw) / 2, 190), title, font=font(54), fill=(0, 0, 0))
+    d.rounded_rectangle((120, H - FOOTER + 40, W - 120, H - FOOTER + 140), 50, outline=(200, 200, 200), width=3, fill=(255, 255, 255))
+    return img
+
+
+IPAD_W, IPAD_H, LIST_W = 1640, 2360, 470
+
+
+def _ipad_screen(tall, top, bg, clock, title):
+    """iPad Messages in portrait: the conversation list stays on the left while
+    the chat pane on the right scrolls. The status bar spans the full width."""
+    chat = _ios_screen(tall, top, bg, "", title, gradient=True)
+    pane = Image.new("RGB", (W, IPAD_H), bg)
+    pane.paste(chat.crop((0, 0, W, IPAD_H - FOOTER)), (0, 0))
+    pane.paste(chat.crop((0, H - FOOTER, W, H)), (0, IPAD_H - FOOTER))
+    img = Image.new("RGB", (IPAD_W, IPAD_H), (255, 255, 255))
+    img.paste(pane, (LIST_W, 0))
+    d = ImageDraw.Draw(img)
+    d.text((40, 30), clock, font=font(40), fill=(0, 0, 0))
+    d.text((40, 190), "Messages", font=font(64), fill=(0, 0, 0))
+    for i, (name, preview) in enumerate([(title, "Last message in this test chat."), ("Alex", "See you tomorrow"),
+                                         ("Sam", "Thanks!"), ("Pat", "Call me back"), ("Jo", "On my way")]):
+        y = 320 + i * 170
+        if i == 0:  # the open conversation is highlighted
+            d.rounded_rectangle((16, y - 10, LIST_W - 16, y + 150), 24, fill=(10, 132, 255))
+        c = (255, 255, 255) if i == 0 else (0, 0, 0)
+        d.text((48, y + 10), name, font=font(44), fill=c)
+        d.text((48, y + 75), preview[:18], font=font(34), fill=c if i == 0 else (120, 120, 128))
+    d.line((LIST_W - 1, 0, LIST_W - 1, IPAD_H), fill=(210, 210, 214), width=2)
+    return img
+
+
 def screen(tall, top, bg, clock, title, style):
+    if style == "ipad":
+        return _ipad_screen(tall, top, bg, clock, title)
+    if style == "ios":
+        return _ios_screen(tall, top, bg, clock, title, gradient=True)
     img = Image.new("RGB", (W, H), bg)
     if style == "whatsapp":  # wallpaper fixed to the screen, not the chat
         dd = ImageDraw.Draw(img)
@@ -131,11 +195,12 @@ def screen(tall, top, bg, clock, title, style):
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
+    render_style = "imessage" if style in ("ios", "ipad") else style
     chat = "Test Kontakt"
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
-    tall, expected, bg = render_chat(style)
-    ch = H - HEADER - FOOTER
+    tall, expected, bg = render_chat(render_style)
+    ch = (IPAD_H if style == "ipad" else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
         tops.append(max(t, 0))
@@ -164,7 +229,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
-    ap.add_argument("--style", choices=["imessage", "whatsapp", "both"], default="both")
+    ap.add_argument("--style", choices=["imessage", "ios", "ipad", "whatsapp", "both"], default="both")
     a = ap.parse_args()
     for s in (["imessage", "whatsapp"] if a.style == "both" else [a.style]):
         print(make(a.out, s))

@@ -103,13 +103,13 @@ def _ink_rows(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return (a.sum(axis=1) + b.sum(axis=1)) > 0.5 * a.shape[1]
 
 
-def _scores(sa: np.ndarray, sb: np.ndarray, candidates, min_rows: int) -> list[tuple[float, int]]:
+def _scores(sa: np.ndarray, sb: np.ndarray, candidates, min_rows: int, min_overlap: int = 0) -> list[tuple[float, int]]:
     """Normalised difference (0 = identical, 1 = unrelated) over the rows of the
     overlap that hold any detail in either shot."""
     out = []
     for d in candidates:
         a, b = _overlap(sa, sb, d)
-        if a.shape[0] < min_rows:
+        if a.shape[0] < max(min_rows, min_overlap):  # too small a shared part proves nothing
             continue
         ink = _ink_rows(a, b)
         if ink.sum() < min_rows:  # too little text in the overlap to prove anything
@@ -147,14 +147,18 @@ def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
     overlap or the best match is not clearly better than the alternatives."""
     h = sa.shape[0]
     min_rows = max(20, int(h * 0.03))
+    # A shared part shorter than this is about one bubble: too little to rule
+    # out a coincidence, so such shots are left unjoined (a visible gap).
+    min_overlap = max(40, int(h * 0.08))
     step = 4
-    coarse = _scores(_block(sa, step), _block(sb, step), range(-(h // step) + 1, h // step), max(5, min_rows // step))
+    coarse = _scores(_block(sa, step), _block(sb, step), range(-(h // step) + 1, h // step), max(5, min_rows // step),
+                     min_overlap // step)
     if not coarse:
         return None, None, "no overlap holds enough text to compare"
     coarse.sort()
     fine: dict[int, float] = {}
     for _, dc in coarse[:12]:
-        for sc, d in _scores(sa, sb, range(dc * step - step, dc * step + step + 1), min_rows):
+        for sc, d in _scores(sa, sb, range(dc * step - step, dc * step + step + 1), min_rows, min_overlap):
             if d != 0:
                 fine[d] = sc
     if not fine:
@@ -315,6 +319,47 @@ def column_change(grays: list[np.ndarray]) -> np.ndarray:
     return np.abs(stack - stack[0]).max(axis=0).mean(axis=0)
 
 
+def _column_scroll(grays: list[np.ndarray], c0: int, c1: int) -> np.ndarray | None:
+    """Per column: +1 where the content moves with the chat's scroll, -1 where
+    it stays put while the chat scrolls, 0 where it cannot tell (blank).
+
+    Shots are lined up on columns c0..c1 (the chat's busy core) and the middle
+    rows. For each matched pair, each column of the later shot is compared with
+    the earlier shot twice: shifted by the scroll distance, and not shifted.
+    Rows are averaged in blocks of 4 so sub-pixel redraws do not matter.
+    Returns None when no two shots line up.
+    """
+    h, w = grays[0].shape
+    m0, m1 = int(h * 0.15), int(h * 0.85)
+    places = _place([row_signature(g[m0:m1, c0:c1]) for g in grays], 0.3)
+    moved = np.zeros(w)
+    stayed = np.zeros(w)
+    pairs = 0
+    for i, pl in enumerate(places):
+        if pl.matched_with is None:
+            continue
+        d = pl.y - places[pl.matched_with].y
+        a, b = grays[pl.matched_with], grays[i]
+        r0, r1 = max(m0, m0 - d), min(m1, m1 - d)  # rows r of b whose r + d is a middle row of a
+        if r1 - r0 < 40:
+            continue
+        n = (r1 - r0) // 4 * 4
+
+        def blocks(x):
+            return x[:n].reshape(n // 4, 4, w).mean(axis=1)
+        bb = blocks(b[r0:r0 + n])
+        moved += np.abs(blocks(a[r0 + d:r0 + d + n]) - bb).mean(axis=0)
+        stayed += np.abs(blocks(a[r0:r0 + n]) - bb).mean(axis=0)
+        pairs += 1
+    if not pairs:
+        return None
+    moved, stayed = moved / pairs, stayed / pairs
+    out = np.zeros(w, dtype=np.int8)
+    out[(moved < 0.5 * stayed) & (stayed > 2.0)] = 1
+    out[(stayed < 0.5 * moved) & (moved > 2.0)] = -1
+    return out
+
+
 def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
     """Columns of the chat when it shares the screen with something that does
     not scroll, such as the conversation list on an iPad.
@@ -331,11 +376,20 @@ def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
     mid = slice(int(h * 0.15), int(h * 0.85))
     stack = np.stack([g[mid] for g in grays])
     change = column_change(grays)
-    moving = change > 2.0
+    # "Moving" is judged against the chat itself: a side list can shift a little
+    # between shots (translucent material, a highlight), but far less than the
+    # chat, whose columns change wherever messages scroll past.
+    # The chat is judged against itself: a side list can drift a little between
+    # shots (translucent material, a highlight) but far less than the chat.
+    # A strict threshold finds the core of the chat; a lenient one then grows
+    # it outwards, so quieter chat columns near its edge are kept while the
+    # list, which changes by a small fraction of that, is left out.
+    p90 = float(np.percentile(change, 90))
+    strict, lenient = max(2.0, 0.2 * p90), max(2.0, 0.02 * p90)
     gap = max(2, int(w * 0.01))
     runs, start, quiet = [], None, 0
     for x in range(w):
-        if moving[x]:
+        if change[x] > strict:
             if start is None:
                 start = x
             quiet, last = 0, x
@@ -349,6 +403,36 @@ def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
     if not runs:
         return 0, w
     x0, x1 = max(runs, key=lambda r: r[1] - r[0])
+    scrolls = _column_scroll(grays, x0, x1)
+
+    def grow(x, step):
+        """Widen the pane from its core until columns clearly stay put while the
+        chat scrolls (the list). Blank columns, which say nothing either way,
+        are only taken in up to a small margin beyond the outermost column that
+        scrolls, so blank list space next to the chat stays out. Without any
+        matched pair of shots, fall back to how much each column changes."""
+        edge, outer, quiet = x, x, 0
+        while 0 <= x + step < w:
+            x += step
+            if scrolls is not None:
+                still, moves = scrolls[x] < 0, scrolls[x] > 0
+            else:
+                still = change[x] <= lenient
+                moves = not still
+            if not still:
+                edge, quiet = x, 0
+                if moves:
+                    outer = x
+            else:
+                quiet += 1
+                if quiet > gap:
+                    break
+        if scrolls is None:
+            return edge
+        margin = max(2, int(w * 0.02))
+        return max(edge, outer - margin) if step < 0 else min(edge, outer + margin)
+
+    x0, x1 = grow(x0, -1), grow(x1 - 1, 1) + 1
     if x1 - x0 < w * 0.3 or (x1 - x0) > w * 0.85:
         return 0, w
 

@@ -16,7 +16,7 @@ from chat_capture_to_html.capture import load_capture  # noqa: E402
 from chat_capture_to_html.pipeline import build_chat  # noqa: E402
 
 
-@pytest.mark.parametrize("style", ["imessage", "ios", "ipad", "whatsapp"])
+@pytest.mark.parametrize("style", ["imessage", "ios", "ios-dark", "ipad", "ipad-dark", "whatsapp"])
 def test_order_sides_and_views_without_ocr(tmp_path, style):
     folder = make_fixture.make(tmp_path, style)
     expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
@@ -31,7 +31,7 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
             info = res.shots[v.shot]
             assert 0 <= x0 < x1 <= info.width and 0 <= y0 < y1 <= info.height
             assert v.shot in m.text_from
-    if style == "ipad":  # views stay inside the chat pane, never in the conversation list
+    if style.startswith("ipad"):  # views stay inside the chat pane, never in the conversation list
         assert all(v.box[0] >= make_fixture.LIST_W for m in res.messages for v in m.views)
     # the newest message is shown whole, not cut at the input bar
     assert res.messages[-1].views[0].complete

@@ -2,8 +2,6 @@
 
 # chat-capture-to-html
 
-Author: Dielle De Noon (@Gear-I), with Claude
-
 Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each screenshot, merges overlapping shots, works out the sender from bubble side and colour, and links every message back to its source screenshot and SHA-256 hash.
 
 ## What it does
@@ -84,3 +82,9 @@ py -m pytest
 ```
 
 Real capture data stays out of the repository (`screenshots/` is git-ignored).
+
+## License
+
+GNU General Public License v3.0, see [LICENSE](LICENSE).
+
+Author: Dielle De Noon (@Gear-I), with Claude

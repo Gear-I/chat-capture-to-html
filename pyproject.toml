@@ -13,10 +13,12 @@ dependencies = ["numpy", "pillow", "opencv-python-headless"]
 
 [project.optional-dependencies]
 rapidocr = ["rapidocr-onnxruntime"]
+live = ["pymobiledevice3>=11.55"]
 test = ["pytest"]
 
 [project.scripts]
 chat-capture-to-html = "chat_capture_to_html.cli:main"
+chatwalk = "chat_capture_to_html.live.cli:main"
 
 [tool.setuptools]
-packages = ["chat_capture_to_html"]
+packages = ["chat_capture_to_html", "chat_capture_to_html.live"]

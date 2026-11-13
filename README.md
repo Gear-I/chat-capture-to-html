@@ -58,6 +58,29 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
 | `--diagnose` | Print screen size, the chat area found and how each screenshot was lined up, in numbers only (no message text), so the output can be shared when something looks wrong |
 
+## Live mode (in development): `chatwalk`
+
+The aim is a tool like [AppWalk](https://github.com/abrignoni/appwalk), but for iPhone and iPad. Instead of reading screenshots with OCR, it moves the device's accessibility focus through the app (as UFADE's chat capture does) and reads the text the app itself reports for each element. It will take screenshots along the way, join them by shared lines of text, keep a hash-chained log, and write a transcript and a PDF report.
+
+Only the first step exists so far: **`chatwalk probe`**. It finds out what the device reports, so the walker can be built on what real devices do. Its output holds no message text: every part of a caption is either a fixed interface word (`Button`, `iMessage`, `Read`) or replaced by its kind (`<time>`, `<date>`, `<text 3 words>`). Screen positions stay as numbers. It is safe to share.
+
+Before running it:
+
+- Use it only on a device you may lawfully examine. It does not unlock anything: unlock the device yourself and open the app and the conversation.
+- It moves the accessibility focus through the app, which can scroll it. It presses and types nothing.
+- Use airplane mode unless you mean otherwise.
+- The device must be trusted by this computer, with Developer Mode on (iOS/iPadOS 17 or later), as for UFADE. Close UFADE first.
+
+```bash
+py -m pip install .[live]
+```
+
+```bash
+chatwalk probe
+```
+
+It prints a summary and writes `probe_<time>.json`. `--limit N` walks more elements (default 60). `--show-identifiers` keeps values set by the app's developer, such as element identifiers, verbatim. They are not written by people, but check before sharing. `--pair` pairs with a device that was never paired; the device then asks whether to trust this computer.
+
 ## Limits
 
 - OCR text is a reading aid; the screenshot is the evidence. Emoji are not recognised, and `I` sometimes comes out as `|`. Low-confidence messages are highlighted.

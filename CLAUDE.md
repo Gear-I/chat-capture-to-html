@@ -6,11 +6,15 @@ before going ahead.
 
 ## 1. What this project is
 
-`chat-capture-to-html` turns a UFADE Chat capture folder
+`chat-capture-to-html` has two modes. The first turns a UFADE Chat capture folder
 (`screenshots/<app>/<chat>/`) into an HTML chat. It checks every PNG against
 its `.txt` SHA-256, OCRs offline, merges overlapping shots, works out the
 sender from bubble side and colour, and links each message to its screenshot
 and hash.
+
+The second, `chatwalk` (in development), documents a chat live on a connected
+iPhone or iPad, reading the text the app reports through the accessibility
+service instead of OCR, in the manner of AppWalk.
 
 The output supports a forensic examiner. It does not replace the screenshots,
 which are the evidence.
@@ -47,6 +51,21 @@ which are the evidence.
    keep it that way.
 3. The examiner's own test data lives outside the repository (for example
    `C:\ufade-test`). Refer to it by path only.
+
+## 3a. Live mode (`chatwalk`)
+
+1. It is for devices the examiner may lawfully examine. It never unlocks,
+   bypasses or guesses anything: when the device is locked or a passcode
+   prompt is in front, it stops and tells the examiner.
+2. It only moves the accessibility focus and reads what the device reports
+   (and, later, takes screenshots). It does not press, type or change
+   settings unless a later, documented step needs it.
+3. Everything it changes on the device is documented for the examiner
+   (pairing, scrolling, read receipts when a conversation is opened).
+4. Output meant for sharing (the probe) holds shapes, never content: see
+   `live/redact.py`, and keep its leak test passing.
+5. `pymobiledevice3` is an optional dependency (`.[live]`), needed to talk to
+   the device; the UFADE-folder mode must keep working without it.
 
 ## 4. Test data
 

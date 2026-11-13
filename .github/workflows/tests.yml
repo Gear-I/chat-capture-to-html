@@ -46,7 +46,7 @@ jobs:
           tesseract --list-langs
 
       - name: Install package
-        run: python -m pip install ".[test]"
+        run: python -m pip install ".[test,live]"
 
       - name: Run tests
         run: python -m pytest -v

@@ -250,36 +250,61 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
                 if tot > 0.5 * a.shape[0]:
                     errs[r].append(float(np.abs(a - b).sum() / tot))
     if not any(errs):
-        return None, places
+        return None, places, []
 
     def state(r):
         if not errs[r]:
             return 0  # no detail: says nothing
         return 1 if float(np.median(errs[r])) < 0.25 else -1
 
-    top = c0
-    for r in range(c0, -1, -1):
-        st = state(r)
-        if st < 0:
-            break
-        if st > 0:
-            top = r
-    bottom = c1
-    for r in range(c1, h):
-        st = state(r)
-        if st < 0:
-            break
-        if st > 0:
-            bottom = r + 1
-    return (top, bottom), places
+    states = [state(r) for r in range(h)]
+    tol = max(3, int(h * 0.005))  # a few odd rows (sub-pixel redraws) do not end the chat
+
+    def grow(rows):
+        edge, bad = None, 0
+        for r in rows:
+            if states[r] < 0:
+                bad += 1
+                if bad > tol:
+                    break
+            else:
+                bad = 0
+                if states[r] > 0:
+                    edge = r
+        return edge
+
+    t = grow(range(c0, -1, -1))
+    b = grow(range(c1, h))
+    return (c0 if t is None else t, c1 if b is None else b + 1), places, states
 
 
 def content_band(grays: list[np.ndarray]) -> tuple[int, int, list[Placement]]:
     """Rows of the chat area: from scrolling where shots overlap, otherwise from
     rows that stay the same in every shot. Also returns how the shots lined up
     on the middle of the screen."""
-    band, middle = find_content_band(grays)
-    return (*(band or detect_chrome(grays)), middle)
+    band, middle, states = find_content_band(grays)
+    chrome = detect_chrome(grays)
+    if band is None:
+        return (*chrome, middle)
+    top, bottom = band
+    tol = max(3, int(len(states) * 0.005))
+
+    def blocked(rows) -> bool:  # a real run of rows that stay put
+        run = 0
+        for r in rows:
+            run = run + 1 if states[r] < 0 else 0
+            if run > tol:
+                return True
+        return False
+
+    # Rows next to the bars can only appear in the newest or oldest shot, so no
+    # other shot confirms them. Take them in up to the bars found independently,
+    # unless rows that stay put lie between.
+    if chrome[0] < top and not blocked(range(top - 1, chrome[0] - 1, -1)):
+        top = chrome[0]
+    if chrome[1] > bottom and not blocked(range(bottom, chrome[1])):
+        bottom = chrome[1]
+    return top, bottom, middle
 
 
 def column_change(grays: list[np.ndarray]) -> np.ndarray:

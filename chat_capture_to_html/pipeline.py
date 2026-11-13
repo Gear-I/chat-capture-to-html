@@ -45,6 +45,7 @@ class Message:
     sources: list[Source] = field(default_factory=list)
     text_from: list[int] = field(default_factory=list)
     is_name_label: bool = False
+    views: list[Source] = field(default_factory=list)  # what to show when no text was read, top to bottom
 
     @property
     def text(self) -> str:
@@ -78,6 +79,7 @@ class ChatResult:
     chat_right: int = 0
     middle_match: dict[int, Placement] = field(default_factory=dict)  # shot index -> first try on the middle rows
     column_change: list[float] = field(default_factory=list)  # per 1/40 of the width, for --diagnose
+    text_read: bool = True           # False with --no-ocr: messages are views of the screenshots
 
 
 # ---------------------------------------------------------------- helpers
@@ -236,7 +238,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
 
     scale = 2 if W < 900 else 1
     messages: list[Message] = []
-    progress(f"reading {len(clusters)} message bubbles")
+    progress(f"reading {len(clusters)} message bubbles" if engine is not None else f"found {len(clusters)} message bubbles")
     for members in clusters.values():
         members.sort(key=lambda a: inst[a][0])
         seg = inst[members[0]][2]
@@ -254,7 +256,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         else:
             chosen = members
         got: list[tuple[float, Line, float, float]] = []  # (gy mid, line, gy0, gy1)
-        for a in chosen:
+        for a in (chosen if engine is not None else []):
             k, b, _, g0, _ = inst[a]
             crop = bands[k][b.y0:b.y1, b.x0:b.x1]
             lines = _join_rows(engine.read(_prep(crop, b.color, scale, outside=b.outside), block=True))
@@ -281,10 +283,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       lines=[g[1].text for g in kept],
                       conf=float(np.mean([g[1].conf for g in kept])) if kept else 0.0,
                       sources=sources, text_from=sorted({idx[inst[a][0]] for a in chosen}))
+        for a in sorted(chosen, key=lambda a: inst[a][3]):
+            k, b, _, _, _ = inst[a]
+            msg.views.append(Source(idx[k], (b.x0 + xo, b.y0 + top, b.x1 + xo, b.y1 + top), b.complete))
         messages.append(msg)
 
     # ------------------------------------------------ text outside bubbles
-    progress("reading text between bubbles")
+    progress("reading text between bubbles" if engine is not None else "finding lines between bubbles")
     metas: list[Message] = []
     for k, band in enumerate(bands):
         bg = bgs[k]
@@ -292,10 +297,14 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         for (kk, b, _, _, _) in inst:
             if kk == k:
                 masked[max(0, b.y0 - 4):b.y1 + 4, max(0, b.x0 - 4):b.x1 + 4] = bg
-        lines = _join_rows(engine.read(_prep(masked, bg, scale, pad=0), block=False))
+        if engine is None:
+            lines = [Line("", 0.0, x0 * scale, y0 * scale, x1 * scale, y1 * scale)
+                     for x0, y0, x1, y1 in _ink_lines(masked, bg)]
+        else:
+            lines = _join_rows(engine.read(_prep(masked, bg, scale, pad=0), block=False))
         pl = places[k]
         for l in lines:
-            if not _good(l, min_conf):
+            if engine is not None and not _good(l, min_conf):
                 continue
             y0, y1 = l.y0 / scale, l.y1 / scale
             x0, x1 = int(l.x0 / scale), int(l.x1 / scale)
@@ -311,11 +320,16 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                     break
             if dup:
                 dup.sources.append(src)
-                if l.conf > dup.conf:
+                if engine is None:
+                    # show the copy from a verified shot where there is one
+                    if cap.shots[idx[k]].verified and not cap.shots[dup.text_from[0]].verified:
+                        dup.text_from, dup.views = [idx[k]], [src]
+                elif l.conf > dup.conf:
                     dup.lines, dup.conf, dup.text_from = [l.text], l.conf, [idx[k]]
                 continue
-            metas.append(Message("meta", pl.segment, g0, g1, x0, x1, side="center", lines=[l.text], conf=l.conf,
-                                 sources=[src], text_from=[idx[k]]))
+            metas.append(Message("meta", pl.segment, g0, g1, x0, x1, side="center",
+                                 lines=[l.text] if engine is not None else [], conf=l.conf,
+                                 sources=[src], text_from=[idx[k]], views=[src] if engine is None else []))
 
     # ------------------------------------------------ order, segments, extras
     deltas = [p.y - places[p.matched_with].y for p in places if p.matched_with is not None]
@@ -331,18 +345,55 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     for m in allm:
         if m.kind == "bubble" and m.side == "center":
             m.kind = "meta"
-    _attach_names(allm, W)
-    stripped = _strip_bubble_times(allm)
+    if engine is not None:  # names and in-bubble times need the text
+        _attach_names(allm, W)
+        stripped = _strip_bubble_times(allm)
+    else:
+        stripped = False
     groups = _color_groups(allm)
-    header = _read_header(images[idx[0]][:top], engine) if top > H * 0.04 else ""
+    header = _read_header(images[idx[0]][:top], engine) if engine is not None and top > H * 0.04 else ""
     for m in messages:
-        if not m.lines:
+        if not m.lines and engine is not None:
             m.lines = ["[no text recognised — open the screenshot]"]
     return ChatResult(cap, infos, [m for m in allm if not m.is_name_label], segs, top, bottom, header, groups,
-                      engine.describe(), stripped, warnings, xo, xo + W,
+                      engine.describe() if engine is not None else "none (--no-ocr)", stripped, warnings, xo, xo + W,
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
-                      [float(c.mean()) for c in np.array_split(profile, 40)])
+                      [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+
+
+def _ink_lines(band: np.ndarray, bg: tuple[int, int, int]) -> list[tuple[int, int, int, int]]:
+    """Lines of text or symbols outside the bubbles (dates, names, notices),
+    found without OCR: runs of rows with ink, each split where it has wide gaps.
+    Specks smaller than a line of small text (wallpaper dots) are left out."""
+    h, w, _ = band.shape
+    ink = np.abs(band.astype(np.int16) - np.array(bg, dtype=np.int16)).sum(axis=2) > 60
+    min_h, gap_y, gap_x = max(8, int(w * 0.012)), max(2, int(w * 0.008)), max(12, int(w * 0.06))
+    rows = ink.sum(axis=1) > 0
+    out = []
+    y = 0
+    while y < h:
+        if not rows[y]:
+            y += 1
+            continue
+        y0, quiet = y, 0
+        while y < h and quiet <= gap_y:
+            quiet = 0 if rows[y] else quiet + 1
+            y += 1
+        y1 = y - quiet
+        if y1 - y0 < min_h:
+            continue
+        cols = np.flatnonzero(ink[y0:y1].any(axis=0))
+        start = prev = cols[0]
+        for c in list(cols[1:]) + [None]:
+            if c is None or c - prev > gap_x:
+                if prev + 1 - start >= max(min_h, int(w * 0.02)) and ink[y0:y1, start:prev + 1].sum() > min_h * 4:
+                    out.append((int(start), int(y0), int(prev + 1), int(y1)))
+                if c is not None:
+                    start = c
+            if c is not None:
+                prev = c
+    return out
 
 
 def _attach_names(allm: list[Message], width: int) -> None:

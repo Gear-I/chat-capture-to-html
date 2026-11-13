@@ -5,6 +5,7 @@
 ``ios`` is iMessage drawn the way iOS really composites it: the chat scrolls
 under translucent blurred bars and blue bubbles are shaded by screen position.
 ``ipad`` is the same chat on an iPad, beside the conversation list.
+``ios-dark`` and ``ipad-dark`` are the same in dark mode.
 
 Writes ``OUT_DIR/screenshots/<App>/<chat>/`` with overlapping screenshots taken
 while "scrolling up" from the newest message, a ``.txt`` SHA-256 next to each PNG
@@ -71,9 +72,13 @@ def render_chat(style, rounds=1):
     repeats, each round numbered so no two messages look the same."""
     convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
     wa = style == "whatsapp"
-    bg = (239, 234, 226) if wa else (255, 255, 255)
-    col = {"left": (255, 255, 255) if wa else (233, 233, 235), "right": (217, 253, 211) if wa else (10, 132, 255)}
-    fg = {"left": (17, 27, 33) if wa else (0, 0, 0), "right": (17, 27, 33) if wa else (255, 255, 255)}
+    dark = style.endswith("-dark")
+    bg = (239, 234, 226) if wa else (0, 0, 0) if dark else (255, 255, 255)
+    col = {"left": (255, 255, 255) if wa else (38, 38, 41) if dark else (233, 233, 235),
+           "right": (217, 253, 211) if wa else (10, 132, 255)}
+    fg = {"left": (17, 27, 33) if wa else (255, 255, 255) if dark else (0, 0, 0),
+          "right": (17, 27, 33) if wa else (255, 255, 255)}
+    meta_fg = (142, 142, 147) if dark else (102, 102, 110)
     f, fs = font(51), font(36)
     tall = Image.new("RGB", (W, 6000 * rounds), bg)
     d = ImageDraw.Draw(tall)
@@ -85,7 +90,7 @@ def render_chat(style, rounds=1):
             tw = d.textlength(text, font=fs)
             if wa:
                 d.rounded_rectangle(((W - tw) / 2 - 24, y - 8, (W + tw) / 2 + 24, y + 56), 20, fill=(255, 255, 255))
-            d.text(((W - tw) / 2, y), text, font=fs, fill=(102, 102, 110))
+            d.text(((W - tw) / 2, y), text, font=fs, fill=meta_fg)
             expected.append({"side": "center", "text": text})
             y += 90
             prev = None
@@ -109,7 +114,7 @@ def render_chat(style, rounds=1):
     return tall.crop((0, 0, W, y + 60)), expected, bg
 
 
-def _ios_screen(tall, top, bg, clock, title, gradient):
+def _ios_screen(tall, top, bg, clock, title, gradient, dark=False):
     """Like real iOS Messages: the chat runs under translucent, blurred bars,
     and blue bubbles are shaded by their position on the screen."""
     img = Image.new("RGB", (W, H), bg)
@@ -126,23 +131,26 @@ def _ios_screen(tall, top, bg, clock, title, gradient):
         img = Image.fromarray(a.clip(0, 255).astype("uint8"))
     for y0, y1 in ((0, HEADER), (H - FOOTER, H)):
         region = img.crop((0, y0, W, y1)).filter(ImageFilter.GaussianBlur(30))
-        img.paste(Image.blend(region, Image.new("RGB", region.size, (247, 247, 247)), 0.8), (0, y0))
+        bar = (28, 28, 30) if dark else (247, 247, 247)
+        img.paste(Image.blend(region, Image.new("RGB", region.size, bar), 0.8), (0, y0))
     d = ImageDraw.Draw(img)
-    d.text((80, 50), clock, font=font(48), fill=(0, 0, 0))
+    ink = (255, 255, 255) if dark else (0, 0, 0)
+    d.text((80, 50), clock, font=font(48), fill=ink)
     tw = d.textlength(title, font=font(54))
-    d.text(((W - tw) / 2, 190), title, font=font(54), fill=(0, 0, 0))
-    d.rounded_rectangle((120, H - FOOTER + 40, W - 120, H - FOOTER + 140), 50, outline=(200, 200, 200), width=3, fill=(255, 255, 255))
+    d.text(((W - tw) / 2, 190), title, font=font(54), fill=ink)
+    d.rounded_rectangle((120, H - FOOTER + 40, W - 120, H - FOOTER + 140), 50, width=3,
+                        outline=(60, 60, 64) if dark else (200, 200, 200), fill=(28, 28, 30) if dark else (255, 255, 255))
     return img
 
 
 IPAD_W, IPAD_H, LIST_W = 1640, 2360, 470
 
 
-def _ipad_screen(tall, top, bg, clock, title, subpixel=0.0):
+def _ipad_screen(tall, top, bg, clock, title, subpixel=0.0, list_tint=0, dark=False):
     """iPad Messages in portrait: the conversation list stays on the left while
     the chat pane on the right scrolls. The status bar spans the full width.
     ``subpixel`` redraws the chat as if scrolling stopped between two pixels."""
-    chat = _ios_screen(tall, top, bg, "", title, gradient=True)
+    chat = _ios_screen(tall, top, bg, "", title, gradient=True, dark=dark)
     if subpixel:
         body = chat.crop((0, HEADER, W, H - FOOTER))
         body = body.transform(body.size, Image.AFFINE, (1, 0, 0, 0, 1, subpixel), resample=Image.BILINEAR)
@@ -150,28 +158,32 @@ def _ipad_screen(tall, top, bg, clock, title, subpixel=0.0):
     pane = Image.new("RGB", (W, IPAD_H), bg)
     pane.paste(chat.crop((0, 0, W, IPAD_H - FOOTER)), (0, 0))
     pane.paste(chat.crop((0, H - FOOTER, W, H)), (0, IPAD_H - FOOTER))
-    img = Image.new("RGB", (IPAD_W, IPAD_H), (255, 255, 255))
+    # the list is not perfectly still either: its material shifts shade a little from shot to shot
+    img = Image.new("RGB", (IPAD_W, IPAD_H), (28 + list_tint,) * 3 if dark else (255 - list_tint,) * 3)
     img.paste(pane, (LIST_W, 0))
     d = ImageDraw.Draw(img)
-    d.text((40, 30), clock, font=font(40), fill=(0, 0, 0))
-    d.text((40, 190), "Messages", font=font(64), fill=(0, 0, 0))
+    ink = (255, 255, 255) if dark else (0, 0, 0)
+    d.text((40, 30), clock, font=font(40), fill=ink)
+    d.text((40, 190), "Messages", font=font(64), fill=ink)
     for i, (name, preview) in enumerate([(title, "Last message in this test chat."), ("Alex", "See you tomorrow"),
                                          ("Sam", "Thanks!"), ("Pat", "Call me back"), ("Jo", "On my way")]):
         y = 320 + i * 170
         if i == 0:  # the open conversation is highlighted
             d.rounded_rectangle((16, y - 10, LIST_W - 16, y + 150), 24, fill=(10, 132, 255))
-        c = (255, 255, 255) if i == 0 else (0, 0, 0)
+        c = (255, 255, 255) if i == 0 else ink
         d.text((48, y + 10), name, font=font(44), fill=c)
-        d.text((48, y + 75), preview[:18], font=font(34), fill=c if i == 0 else (120, 120, 128))
-    d.line((LIST_W - 1, 0, LIST_W - 1, IPAD_H), fill=(210, 210, 214), width=2)
+        d.text((48, y + 75), preview[:18], font=font(34), fill=c if i == 0 else (142, 142, 147) if dark else (120, 120, 128))
+    line = (56 + list_tint,) * 3 if dark else (210 - list_tint, 210 - list_tint, 214 - list_tint)
+    d.line((LIST_W - 1, 0, LIST_W - 1, IPAD_H), fill=line, width=2)
     return img
 
 
-def screen(tall, top, bg, clock, title, style, subpixel=0.0):
-    if style == "ipad":
-        return _ipad_screen(tall, top, bg, clock, title, subpixel)
-    if style == "ios":
-        return _ios_screen(tall, top, bg, clock, title, gradient=True)
+def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0):
+    dark = style.endswith("-dark")
+    if style.startswith("ipad"):
+        return _ipad_screen(tall, top, bg, clock, title, subpixel, list_tint, dark)
+    if style.startswith("ios"):
+        return _ios_screen(tall, top, bg, clock, title, gradient=True, dark=dark)
     img = Image.new("RGB", (W, H), bg)
     if style == "whatsapp":  # wallpaper fixed to the screen, not the chat
         dd = ImageDraw.Draw(img)
@@ -200,12 +212,13 @@ def screen(tall, top, bg, clock, title, style, subpixel=0.0):
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
-    render_style = "imessage" if style in ("ios", "ipad") else style
+    render_style = ("imessage-dark" if style.endswith("-dark")
+                    else "imessage" if style in ("ios", "ipad") else style)
     chat = "Test Kontakt"
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     tall, expected, bg = render_chat(render_style)
-    ch = (IPAD_H if style == "ipad" else H) - HEADER - FOOTER
+    ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
         tops.append(max(t, 0))
@@ -216,8 +229,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
     last, n = None, 0
     for i, top in enumerate(tops):
         clock = "9:41" if i < len(tops) // 2 else "9:42"
-        sub = rnd.choice([0.25, 0.5, 0.75]) if style == "ipad" and i else 0.0
-        img = screen(tall, top, bg, clock, chat, style, sub)
+        sub = rnd.choice([0.25, 0.5, 0.75]) if style.startswith("ipad") and i else 0.0
+        img = screen(tall, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2)
         stamp = when.strftime("%m_%d_%Y_%H_%M_%S")
         n = n + 1 if stamp == last else 0  # UFADE adds _1, _2, ... within the same second
         name = f"{chat}_{stamp}" + (f"_{n}" if n else "")
@@ -236,7 +249,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
-    ap.add_argument("--style", choices=["imessage", "ios", "ipad", "whatsapp", "both"], default="both")
+    ap.add_argument("--style", choices=["imessage", "ios", "ios-dark", "ipad", "ipad-dark", "whatsapp", "both"], default="both")
     a = ap.parse_args()
     for s in (["imessage", "whatsapp"] if a.style == "both" else [a.style]):
         print(make(a.out, s))

@@ -69,3 +69,35 @@ def test_full_width_chat_keeps_full_width(style):
     from chat_capture_to_html.layout import find_chat_pane
     grays, _ = _shots(style, [3000, 2400, 1800])
     assert find_chat_pane(grays) == (0, mf.W)
+
+
+def test_chat_pane_beside_a_list_that_changes_a_little():
+    """Like a real dark-mode iPad capture: the list drifts by up to 10 grey levels
+    between shots (its text stays put), the chat scrolls, and nothing between
+    the two stays perfectly still."""
+    from chat_capture_to_html.layout import find_chat_pane
+    rng = np.random.default_rng(7)
+    h, w, edge = 600, 820, 345
+    tall = rng.uniform(0, 255, (h + 900, w - edge)).astype(np.float32)  # the chat, scrolled below
+    lst = rng.uniform(0, 255, (h, edge)).astype(np.float32)             # the list's text
+    drift = np.linspace(0.1, 10, edge)
+    grays = []
+    for k, top in enumerate((900, 610, 330, 40)):
+        g = np.empty((h, w), np.float32)
+        g[:, :edge] = lst + drift * (k % 2)
+        g[:, edge:] = tall[top:top + h]
+        grays.append(g)
+    x0, x1 = find_chat_pane(grays)
+    assert edge - 3 <= x0 <= edge + 3, (x0, x1)
+    assert x1 == w
+
+
+def test_tiny_overlap_is_not_joined():
+    """Shots that share only a sliver (about one bubble) stay apart."""
+    from chat_capture_to_html.layout import match_offset, row_signature
+    rng = np.random.default_rng(3)
+    tall = rng.uniform(0, 255, (4000, 300)).astype(np.float32)
+    a, h = row_signature(tall[2000:3000]), 1000
+    assert match_offset(a, row_signature(tall[1100:2100])) == (-900, 0.0)  # 100 rows shared
+    assert match_offset(a, row_signature(tall[1050:2050])) is None          # 50 rows shared: refused
+    assert match_offset(a, row_signature(tall[1150:2150])) == (-850, 0.0)

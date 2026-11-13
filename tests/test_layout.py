@@ -101,3 +101,16 @@ def test_tiny_overlap_is_not_joined():
     assert match_offset(a, row_signature(tall[1100:2100])) == (-900, 0.0)  # 100 rows shared
     assert match_offset(a, row_signature(tall[1050:2050])) is None          # 50 rows shared: refused
     assert match_offset(a, row_signature(tall[1150:2150])) == (-850, 0.0)
+
+
+def test_lookalike_reason_says_where_it_disagrees():
+    from chat_capture_to_html.layout import match_details, row_signature
+    tall, _, bg = mf.render_chat("imessage", rounds=3)
+    bottom = tall.height - CH
+    shots = [row_signature(to_gray(np.asarray(mf.screen(tall, t, bg, "9:41", "Test", "imessage")).astype(np.float32))
+                           [mf.HEADER:mf.H - mf.FOOTER]) for t in (bottom - 600, bottom - 600 - CH - 200)]
+    d, _, why = match_details(*shots)
+    assert d is None and "only looks alike" in why
+    assert "top to bottom:" in why and "left to right:" in why
+    parts = why.split("top to bottom: ")[1].split("%")[0].split()
+    assert len(parts) == 8 and all(p == "-" or p.isdigit() for p in parts)

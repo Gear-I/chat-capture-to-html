@@ -2,7 +2,7 @@
 
 # chat-capture-to-html
 
-Author: Dielle De Noon ([@Gear-I](https://github.com/Gear-I)), with Claude.
+Author: Dielle De Noon (@Gear-I), with Claude
 
 Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each screenshot, merges overlapping shots, works out the sender from bubble side and colour, and links every message back to its source screenshot and SHA-256 hash.
 

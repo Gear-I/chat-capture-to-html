@@ -16,4 +16,4 @@ def test_report_favicon_is_the_logo():
 def test_readme_header():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert 'src="assets/logo.svg"' in text
-    assert "Author: Dielle De Noon ([@Gear-I](https://github.com/Gear-I)), with Claude." in text
+    assert "Author: Dielle De Noon (@Gear-I), with Claude\n" in text

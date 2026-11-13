@@ -52,10 +52,16 @@ def test_chat_pane_beside_a_fixed_list():
     from chat_capture_to_html.layout import find_chat_pane
     tall, _, bg = mf.render_chat("imessage", rounds=2)
     bottom = tall.height - (mf.IPAD_H - mf.HEADER - mf.FOOTER)
-    grays = [to_gray(np.asarray(mf.screen(tall, t, bg, "9:41", "Test", "ipad")).astype(np.float32))
-             for t in (bottom, bottom - 500, bottom - 1100)]
+    tops = (bottom, bottom - 500, bottom - 1100)
+    grays = [to_gray(np.asarray(mf.screen(tall, t, bg, "9:41", "Test", "ipad", sub)).astype(np.float32))
+             for t, sub in zip(tops, (0.0, 0.5, 0.25))]
     x0, x1 = find_chat_pane(grays)
     assert mf.LIST_W - 2 <= x0 <= mf.LIST_W + 10 and x1 == mf.IPAD_W
+    # scrolling stopped between pixels: still lined up, to the nearest pixel
+    top, bot = content_band([g[:, x0:x1] for g in grays])
+    places = place_shots([g[top:bot, x0:x1] for g in grays])
+    assert {p.segment for p in places} == {0}
+    assert all(abs(p.y - want) <= 1 for p, want in zip(places, (0, -500, -1100)))
 
 
 @pytest.mark.parametrize("style", ["imessage", "ios", "whatsapp"])

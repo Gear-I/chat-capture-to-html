@@ -20,6 +20,15 @@ def _diagnose(res) -> None:
     sizes = {(i.width, i.height) for i in res.shots if i.used}
     print(f"  screen size: {', '.join(f'{w}x{h}' for w, h in sorted(sizes))}")
     print(f"  content band: rows {res.content_top}-{res.content_bottom}, columns {res.chat_left}-{res.chat_right}")
+    if res.middle_match:
+        print("  lining up on the middle of the screen (used to find the chat area):")
+        for i, mp in sorted(res.middle_match.items()):
+            if mp.matched_with is not None:
+                d = mp.y - res.middle_match[mp.matched_with].y
+                print(f"    #{i + 1}: matched #{mp.matched_with + 1}, scrolled {d:+d} px, diff {mp.score:.3f}")
+            elif mp.note:
+                print(f"    #{i + 1}: no match; previous shot: {mp.note}")
+        print("  lining up on the chat area:")
     for n, (shot, info) in enumerate(zip(res.capture.shots, res.shots), 1):
         pl = info.placement
         if pl is None:
@@ -67,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     except OcrError as e:
         print(f"error: {e}", file=sys.stderr)
         return 3
+    say(f"chat-capture-to-html {__version__}")
     say(f"OCR: {engine.describe()}")
 
     single = len(folders) == 1

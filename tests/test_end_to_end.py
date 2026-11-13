@@ -66,3 +66,14 @@ def test_cli_writes_linked_report(tmp_path):
         assert s.sha256 in html
     assert "../in/screenshots/Messages/Test%20Kontakt/" not in html  # report sits next to "in"
     assert "in/screenshots/Messages/Test%20Kontakt/" in html
+
+
+@needs_ocr
+def test_diagnose_prints_version_and_numbers_only(tmp_path, capsys):
+    from chat_capture_to_html import __version__
+    make_fixture.make(tmp_path / "in", "ipad")
+    main([str(tmp_path / "in"), "-o", str(tmp_path / "out"), "--diagnose"])
+    out = capsys.readouterr()
+    assert f"chat-capture-to-html {__version__}" in out.err
+    assert "lining up on the middle of the screen" in out.out
+    assert "Prüfung" not in out.out + out.err and "Büro" not in out.out + out.err  # no message text

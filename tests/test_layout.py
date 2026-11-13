@@ -26,7 +26,7 @@ def test_offsets_match_true_scroll(style):
     bottom = tall.height - CH
     tops = [bottom, bottom - 701, bottom - 701 - 913, bottom - 701 - 913 - 1003]
     grays, _ = _shots(style, tops)
-    top, bot = content_band(grays)
+    top, bot, _ = content_band(grays)
     assert mf.HEADER - 5 <= top <= mf.HEADER + 30
     assert mf.H - mf.FOOTER - 30 <= bot <= mf.H - mf.FOOTER + 5
     places = place_shots([g[top:bot] for g in grays])
@@ -41,7 +41,7 @@ def test_shots_that_do_not_overlap_leave_a_gap(style):
     bottom = tall.height - CH
     tops = [bottom, bottom - 600, bottom - 600 - CH - 200]  # third shot skips part of the chat
     grays, _ = _shots(style, tops)
-    top, bot = content_band(grays)
+    top, bot, _ = content_band(grays)
     places = place_shots([g[top:bot] for g in grays])
     assert places[1].segment == 0 and places[1].y == -600
     assert places[2].segment == 1 and places[2].matched_with is None
@@ -58,7 +58,7 @@ def test_chat_pane_beside_a_fixed_list():
     x0, x1 = find_chat_pane(grays)
     assert mf.LIST_W - 2 <= x0 <= mf.LIST_W + 10 and x1 == mf.IPAD_W
     # scrolling stopped between pixels: still lined up, to the nearest pixel
-    top, bot = content_band([g[:, x0:x1] for g in grays])
+    top, bot, _ = content_band([g[:, x0:x1] for g in grays])
     places = place_shots([g[top:bot, x0:x1] for g in grays])
     assert {p.segment for p in places} == {0}
     assert all(abs(p.y - want) <= 1 for p, want in zip(places, (0, -500, -1100)))

@@ -76,15 +76,34 @@ def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]
     return top, bottom
 
 
-def row_signature(band: np.ndarray) -> np.ndarray:
+def row_signature(band: np.ndarray, keep: np.ndarray | None = None) -> np.ndarray:
     """Per row, how much horizontal detail (text strokes, bubble edges) each of
     SIG_BINS column strips holds. Flat areas score zero whatever their colour,
     so bubble colours that shift with screen position (iOS gradients) and plain
-    backgrounds do not influence matching."""
+    backgrounds do not influence matching. ``keep`` limits it to the strips
+    that move with the chat (see moving_strips)."""
     h, w = band.shape
     dx = np.abs(np.diff(band, axis=1))
     w2 = (w - 1) - (w - 1) % SIG_BINS
-    return dx[:, :w2].reshape(h, SIG_BINS, w2 // SIG_BINS).mean(axis=2)
+    sig = dx[:, :w2].reshape(h, SIG_BINS, w2 // SIG_BINS).mean(axis=2)
+    return sig if keep is None else sig[:, keep]
+
+
+def moving_strips(grays: list[np.ndarray]) -> np.ndarray | None:
+    """The column strips (as in row_signature) whose content changes between
+    shots about as much as the chat does. Strips that barely change while the
+    chat scrolls, such as a sliver of the iPad conversation list left inside
+    the pane, would otherwise favour "the shots did not move" and spoil every
+    match. None when there is too little to tell or nothing to leave out."""
+    if len(grays) < 2:
+        return None
+    w = grays[0].shape[1]
+    w2 = (w - 1) - (w - 1) % SIG_BINS
+    change = column_change(grays)[:w2].reshape(SIG_BINS, w2 // SIG_BINS).mean(axis=1)
+    keep = change > 0.1 * float(np.percentile(change, 90))
+    if keep.all() or keep.sum() < SIG_BINS // 4:
+        return None
+    return keep
 
 
 def _block(sig: np.ndarray, step: int) -> np.ndarray:
@@ -191,10 +210,10 @@ def match_offset(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3) -> tupl
     return None if d is None else (d, score)
 
 
-def place_shots(bands: list[np.ndarray], max_score: float = 0.3) -> list[Placement]:
+def place_shots(bands: list[np.ndarray], max_score: float = 0.3, keep: np.ndarray | None = None) -> list[Placement]:
     """Put every shot on a shared axis, matching each one against the previous
     shot first and then against every shot already placed."""
-    return _place([row_signature(b) for b in bands], max_score)
+    return _place([row_signature(b, keep) for b in bands], max_score)
 
 
 def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
@@ -224,7 +243,8 @@ def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
     return placements
 
 
-def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[tuple[int, int] | None, list[Placement]]:
+def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
+                      keep: np.ndarray | None = None) -> tuple[tuple[int, int] | None, list[Placement]]:
     """Find the rows that scroll with the chat.
 
     The middle of a phone screen is always chat, so shots are first lined up on
@@ -238,7 +258,7 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
     """
     h = grays[0].shape[0]
     c0, c1 = int(h * 0.15), int(h * 0.85)
-    sigs = [row_signature(g) for g in grays]
+    sigs = [row_signature(g, keep) for g in grays]
     places = _place([s[c0:c1] for s in sigs], max_score)
     errs: list[list[float]] = [[] for _ in range(h)]
     for i, pl in enumerate(places):
@@ -282,11 +302,11 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
     return (c0 if t is None else t, c1 if b is None else b + 1), places, states
 
 
-def content_band(grays: list[np.ndarray]) -> tuple[int, int, list[Placement]]:
+def content_band(grays: list[np.ndarray], keep: np.ndarray | None = None) -> tuple[int, int, list[Placement]]:
     """Rows of the chat area: from scrolling where shots overlap, otherwise from
     rows that stay the same in every shot. Also returns how the shots lined up
     on the middle of the screen."""
-    band, middle, states = find_content_band(grays)
+    band, middle, states = find_content_band(grays, keep=keep)
     chrome = detect_chrome(grays)
     if band is None:
         return (*chrome, middle)

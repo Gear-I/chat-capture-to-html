@@ -11,7 +11,7 @@ from PIL import Image
 
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
-from .layout import Placement, column_change, content_band, find_chat_pane, place_shots, to_gray
+from .layout import Placement, column_change, content_band, find_chat_pane, moving_strips, place_shots, to_gray
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -191,9 +191,10 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         images = {i: images[i][:, xo:x_end] for i in images}
         grays = [g[:, xo:x_end] for g in grays]
         W = x_end - xo
+    keep = moving_strips(grays)  # leave strips that barely change (a sliver of the list) out of matching
     middle: list[Placement] = []
     if top is None or bottom is None:
-        t_auto, b_auto, middle = content_band(grays)
+        t_auto, b_auto, middle = content_band(grays, keep)
     else:
         t_auto, b_auto = top, bottom
     top = t_auto if top is None else top
@@ -202,7 +203,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     bh = bottom - top
 
     progress(f"lining up {len(idx)} screenshots")
-    places = place_shots([g[top:bottom] for g in grays])
+    places = place_shots([g[top:bottom] for g in grays], keep=keep)
     for k, i in enumerate(idx):
         infos[i].used = True
         pl = places[k]
@@ -291,17 +292,24 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     # ------------------------------------------------ text outside bubbles
     progress("reading text between bubbles" if engine is not None else "finding lines between bubbles")
     metas: list[Message] = []
+    # Chat content lies between the outermost bubble edges. Looking for date and
+    # name lines only there keeps out anything at the pane's sides that is not
+    # chat: a strip of the iPad conversation list, a scroll indicator.
+    cx0 = min((b.x0 for _, b, _, _, _ in inst), default=0)
+    cx1 = max((b.x1 for _, b, _, _, _ in inst), default=W)
     for k, band in enumerate(bands):
         bg = bgs[k]
         masked = band.copy()
         for (kk, b, _, _, _) in inst:
             if kk == k:
                 masked[max(0, b.y0 - 4):b.y1 + 4, max(0, b.x0 - 4):b.x1 + 4] = bg
+        inner = masked[:, cx0:cx1]
         if engine is None:
             lines = [Line("", 0.0, x0 * scale, y0 * scale, x1 * scale, y1 * scale)
-                     for x0, y0, x1, y1 in _ink_lines(masked, bg)]
+                     for x0, y0, x1, y1 in _ink_lines(inner, bg)]
         else:
-            lines = _join_rows(engine.read(_prep(masked, bg, scale, pad=0), block=False))
+            lines = _join_rows(engine.read(_prep(inner, bg, scale, pad=0), block=False))
+        lines = [Line(l.text, l.conf, l.x0 + cx0 * scale, l.y0, l.x1 + cx0 * scale, l.y1) for l in lines]
         pl = places[k]
         for l in lines:
             if engine is not None and not _good(l, min_conf):

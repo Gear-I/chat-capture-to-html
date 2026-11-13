@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chat-capture-to-html"
-version = "0.3.1"
+version = "0.4.0"
 description = "Turn a UFADE Chat capture folder into a hash-linked HTML chat using offline OCR"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,8 +19,11 @@ test = ["pytest"]
 [project.scripts]
 chat-capture-to-html = "chat_capture_to_html.cli:main"
 
+[project.gui-scripts]
+chat-capture-to-html-gui = "chat_capture_to_html.gui:main"
+
 [tool.setuptools]
 packages = ["chat_capture_to_html"]
 
 [tool.setuptools.package-data]
-chat_capture_to_html = ["logo.svg"]
+chat_capture_to_html = ["logo.svg", "logo_64.png"]

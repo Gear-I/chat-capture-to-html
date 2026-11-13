@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_packaged_logo_matches_assets():
     assert (ROOT / "chat_capture_to_html" / "logo.svg").read_bytes() == (ROOT / "assets" / "logo.svg").read_bytes()
+    assert (ROOT / "chat_capture_to_html" / "logo_64.png").read_bytes() == (ROOT / "assets" / "logo_64.png").read_bytes()
 
 
 def test_report_favicon_is_the_logo():

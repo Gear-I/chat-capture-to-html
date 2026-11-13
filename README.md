@@ -64,6 +64,23 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
 | `--diagnose` | Print screen size, the chat area found and how each screenshot was lined up, in numbers only (no message text), so the output can be shared when something looks wrong |
 
+## The window
+
+For a window instead of the command line:
+
+```bash
+chat-capture-to-html-gui
+```
+
+or `py -m chat_capture_to_html.gui` on Windows, `python3 -m chat_capture_to_html.gui` elsewhere. Choose the capture folder and a reports folder, tick the options you want, and press **Run**:
+
+- **No OCR**, **Only use screenshots whose hash verifies** and **Diagnose** are the `--no-ocr`, `--verified-only` and `--diagnose` options. The two sender labels are `--me` and `--them`.
+- The tool's output appears in the log as it runs. Afterwards the window says in plain words whether every hash matched, and **Open report** opens the report in your browser.
+- It refuses a reports folder inside the capture folder, so the evidence folder stays as UFADE wrote it.
+- The title bar shows the version, so you can tell which build ran.
+
+It uses Tkinter, which comes with Python on Windows and macOS. On Linux, install it first, for example `sudo apt install python3-tk`.
+
 ## Use on Linux or macOS
 
 `scripts/run.sh` does the setup for you. It keeps its own Python environment in `.venv` inside this folder, installs the tool there, reinstalls it whenever the code changes, and checks that the version that runs is the one in this folder. Everything after its own options goes to the tool unchanged:

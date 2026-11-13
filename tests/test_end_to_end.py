@@ -28,7 +28,7 @@ def norm(s):
 
 
 @needs_ocr
-@pytest.mark.parametrize("style", ["imessage", "whatsapp"])
+@pytest.mark.parametrize("style", ["imessage", "ios", "whatsapp"])
 def test_chat_matches_ground_truth(tmp_path, style):
     folder = make_fixture.make(tmp_path, style)
     expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))

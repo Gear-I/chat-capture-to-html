@@ -6,7 +6,7 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 
 1. **Reads the capture.** UFADE stores each chat as `screenshots/<app>/<chat>/<chat>_MM_DD_YYYY_HH_MM_SS[_n].png`, with a `.txt` file next to each PNG holding its SHA-256. You can point the tool at one chat folder, or at `screenshots/` to process every chat in it.
 2. **Checks every hash.** It recomputes the SHA-256 of each PNG and compares it with the `.txt` file. Each shot is marked *verified*, *HASH MISMATCH*, *no hash file* or *hash file unreadable*. It also lists `.txt` files that have no PNG.
-3. **Lines up the overlapping shots.** It detects the fixed header and input bar, then matches the scrolling part of consecutive screenshots row by row. This places every shot on one vertical axis. It works whether UFADE scrolled up or down. If two shots don't overlap, the report shows a visible gap marker instead of guessing.
+3. **Lines up the overlapping shots.** It compares where text and bubble edges sit, not colours, so iOS bubble shading and fixed wallpapers don't disturb it. Shots are first matched using the middle of the screen, which is always chat. Then the chat area is grown outwards over every row that moves with the scroll; the status bar, title and input bar stay put, even when they are translucent. This places every shot on one vertical axis, whether UFADE scrolled up or down. A match is refused if it is ambiguous, or if the screens only look alike (for example repeated automated messages). Where two shots can't be matched, the report shows a visible gap marker instead of guessing; `--diagnose` prints why.
 4. **Finds the bubbles and the sender.** A bubble is a smooth area whose colour differs from the background. Right-hand bubbles are the device owner; left-hand bubbles are the other party; centred items are dates and system notices. Small text just above a left-hand bubble (group chats) is used as the sender's name. The report shows each bubble's colour and a colour legend, and warns if one colour appears on both sides.
 5. **OCRs offline.** Tesseract, or RapidOCR as a fallback. Each bubble that appears in several shots is read once, from a verified shot where it is fully visible. A bubble taller than the screen is read from each part and joined. Apps that print a time inside the bubble (e.g. WhatsApp) get that time split into its own field.
 6. **Writes the HTML.** Every message carries:
@@ -56,11 +56,13 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | `--tesseract PATH` | Path to `tesseract.exe` if it is somewhere unusual |
 | `--top N`, `--bottom N` | Pixels of fixed header/footer to ignore, if detection gets them wrong |
 | `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
+| `--diagnose` | Print screen size, the chat area found and how each screenshot was lined up, in numbers only (no message text), so the output can be shared when something looks wrong |
 
 ## Limits
 
 - OCR text is a reading aid; the screenshot is the evidence. Emoji are not recognised, and `I` sometimes comes out as `|`. Low-confidence messages are highlighted.
 - Photos, stickers and voice messages are not bubbles of flat colour, so they are not listed as messages. They are still visible in the linked screenshots.
+- Alignment prefers a gap over a guess: a pair of shots that only look alike, or that match equally well in two places, is not merged, so a message can then appear twice on either side of the gap marker.
 - Sender is decided by side; a bubble colour on both sides is flagged, not corrected.
 - Detecting the header assumes at least two screenshots of the same size. Shots of a different size are skipped and reported.
 

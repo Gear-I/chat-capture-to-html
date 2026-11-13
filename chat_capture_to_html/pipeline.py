@@ -11,7 +11,7 @@ from PIL import Image
 
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
-from .layout import Placement, detect_chrome, place_shots, to_gray
+from .layout import Placement, content_band, place_shots, to_gray
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -171,7 +171,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     idx = sorted(images)
     H, W = size
     grays = [to_gray(images[i].astype(np.float32)) for i in idx]
-    t_auto, b_auto = detect_chrome(grays)
+    t_auto, b_auto = content_band(grays) if (top is None or bottom is None) else (top, bottom)
     top = t_auto if top is None else top
     bottom = b_auto if bottom is None else (H - bottom if bottom >= 0 else H)
     bands = [images[i][top:bottom] for i in idx]
@@ -182,7 +182,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     for k, i in enumerate(idx):
         infos[i].used = True
         pl = places[k]
-        infos[i].placement = Placement(pl.segment, pl.y, idx[pl.matched_with] if pl.matched_with is not None else None, pl.score)
+        infos[i].placement = Placement(pl.segment, pl.y, idx[pl.matched_with] if pl.matched_with is not None else None,
+                                       pl.score, pl.note)
 
     # ------------------------------------------------ bubbles on the shared axis
     inst = []  # (k, bubble, segment, gy0, gy1)

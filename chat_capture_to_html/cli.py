@@ -16,6 +16,22 @@ def _safe(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).strip(" .") or "chat"
 
 
+def _diagnose(res) -> None:
+    sizes = {(i.width, i.height) for i in res.shots if i.used}
+    print(f"  screen size: {', '.join(f'{w}x{h}' for w, h in sorted(sizes))}")
+    print(f"  content band: rows {res.content_top}-{res.content_bottom}")
+    for n, (shot, info) in enumerate(zip(res.capture.shots, res.shots), 1):
+        pl = info.placement
+        if pl is None:
+            print(f"  #{n}: not used ({info.skip_reason})")
+        elif pl.matched_with is None:
+            print(f"  #{n}: segment {pl.segment + 1} start" + (f"; previous shot: {pl.note}" if pl.note else "")
+                  + f"; {info.bubbles} bubbles")
+        else:
+            print(f"  #{n}: matched #{pl.matched_with + 1}, scrolled {pl.y - res.shots[pl.matched_with].placement.y:+d} px, "
+                  f"diff {pl.score:.3f}; {info.bubbles} bubbles")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="chat-capture-to-html",
@@ -33,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--top", type=int, help="pixels of fixed header to ignore (default: detected)")
     p.add_argument("--bottom", type=int, help="pixels of fixed footer to ignore (default: detected)")
     p.add_argument("--verified-only", action="store_true", help="leave out screenshots whose hash does not verify")
+    p.add_argument("--diagnose", action="store_true",
+                   help="print screen size, header/footer rows and how each screenshot was lined up "
+                        "(numbers only, no message text), for sharing when something looks wrong")
     p.add_argument("-q", "--quiet", action="store_true")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     a = p.parse_args(argv)
@@ -77,5 +96,9 @@ def main(argv: list[str] | None = None) -> int:
         say(f"  {sum(1 for m in res.messages if m.kind == 'bubble')} messages -> {target}")
         for w in res.warnings:
             say(f"  ! {w}")
+        if a.diagnose:
+            _diagnose(res)
+        elif len(res.segment_order) > 1:
+            say("    run again with --diagnose to see why (prints numbers only, no message text)")
         written.append(target)
     return worst

@@ -21,7 +21,8 @@ class Placement:
     segment: int          # shots in different segments could not be lined up
     y: int                # top of the content band on the segment's axis
     matched_with: int | None
-    score: float | None   # mean row difference of the match (0 = identical)
+    score: float | None   # normalised difference of the match (0 = identical, 1 = unrelated)
+    note: str = ""        # why the shot before could not be matched, in numbers only
 
 
 def to_gray(img: np.ndarray) -> np.ndarray:
@@ -31,22 +32,34 @@ def to_gray(img: np.ndarray) -> np.ndarray:
 def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]:
     """Return (top, bottom) rows of the content band.
 
-    Rows that look the same in every screenshot are screen chrome. Short runs of
-    changing rows inside the chrome (a clock, a translucent blurred bar) are
-    tolerated as long as a static row follows within 2% of the height.
+    Screen chrome is either the same in every screenshot (status bar, title,
+    input field) or translucent and blurred, as on iOS, where the chat shows
+    through as a soft smear that has no sharp detail in any shot. Short runs of
+    other rows (a changing clock) are tolerated as long as a chrome row follows
+    within 2% of the height.
     """
     h = grays[0].shape[0]
     if len(grays) < 2:
         return int(h * 0.11), int(h * 0.91)
     stack = np.stack(grays)
-    diff = np.abs(stack - stack[0]).mean(axis=2).max(axis=0)  # per row, worst shot
+    n, _, w = stack.shape
+    w2 = w - w % SIG_BINS
+    strips = stack[:, :, :w2].reshape(n, h, SIG_BINS, w2 // SIG_BINS).mean(axis=3)
+    # per row: the largest change in any column strip, in the worst shot, so a
+    # short line of text on an otherwise empty row still counts as a change
+    diff = np.abs(strips - strips[0]).max(axis=2).max(axis=0)
+    detail = np.abs(np.diff(stack, axis=2)).mean(axis=2).max(axis=0)  # per row, sharpest shot
     static = diff <= tol
+    blurred = detail <= 0.6
     gap = max(2, int(h * 0.02))
 
     def scan(rows):
+        # Unchanged rows may bridge a short run of changing ones (a clock).
+        # Blurred rows only extend the bar directly, never across a gap, so
+        # flat rows inside bubbles further in cannot pull the edge inwards.
         edge, run = None, 0
         for r in rows:
-            if static[r]:
+            if static[r] or (blurred[r] and run == 0):
                 edge, run = r, 0
             else:
                 run += 1
@@ -64,50 +77,110 @@ def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]
 
 
 def row_signature(band: np.ndarray) -> np.ndarray:
+    """Per row, how much horizontal detail (text strokes, bubble edges) each of
+    SIG_BINS column strips holds. Flat areas score zero whatever their colour,
+    so bubble colours that shift with screen position (iOS gradients) and plain
+    backgrounds do not influence matching."""
     h, w = band.shape
-    w2 = w - w % SIG_BINS
-    return band[:, :w2].reshape(h, SIG_BINS, w2 // SIG_BINS).mean(axis=2)
+    dx = np.abs(np.diff(band, axis=1))
+    w2 = (w - 1) - (w - 1) % SIG_BINS
+    return dx[:, :w2].reshape(h, SIG_BINS, w2 // SIG_BINS).mean(axis=2)
 
 
-def _scores(sa: np.ndarray, sb: np.ndarray, candidates, min_overlap: int) -> list[tuple[float, int]]:
+def _block(sig: np.ndarray, step: int) -> np.ndarray:
+    h = sig.shape[0] - sig.shape[0] % step
+    return sig[:h].reshape(h // step, step, -1).mean(axis=1)
+
+
+def _overlap(sa: np.ndarray, sb: np.ndarray, d: int) -> tuple[np.ndarray, np.ndarray]:
     h = sa.shape[0]
+    a0, a1 = max(0, d), min(h, h + d)
+    # row r of B shows the same content as row r + d of A
+    return sa[a0:a1], sb[a0 - d:a1 - d]
+
+
+def _ink_rows(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    return (a.sum(axis=1) + b.sum(axis=1)) > 0.5 * a.shape[1]
+
+
+def _scores(sa: np.ndarray, sb: np.ndarray, candidates, min_rows: int) -> list[tuple[float, int]]:
+    """Normalised difference (0 = identical, 1 = unrelated) over the rows of the
+    overlap that hold any detail in either shot."""
     out = []
     for d in candidates:
-        # row r of B shows the same content as row r + d of A
-        a0, a1 = max(0, d), min(h, h + d)
-        if a1 - a0 < min_overlap:
+        a, b = _overlap(sa, sb, d)
+        if a.shape[0] < min_rows:
             continue
-        a = sa[a0:a1]
-        b = sb[a0 - d:a1 - d]
-        if a.std() < 1.5:  # featureless overlap proves nothing
+        ink = _ink_rows(a, b)
+        if ink.sum() < min_rows:  # too little text in the overlap to prove anything
             continue
-        out.append((float(np.abs(a - b).mean()), d))
+        a, b = a[ink], b[ink]
+        out.append((float(np.abs(a - b).sum() / max((a + b).sum(), 1e-6)), d))
     return out
 
 
-def match_offset(sa: np.ndarray, sb: np.ndarray, max_score: float) -> tuple[int, float] | None:
-    """Scroll offset d so that B[r] == A[r + d], or None when the bands do not overlap."""
+def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
+    """Share of text rows in the overlap where some column strip clearly
+    differs. A true match is near zero; screens that merely look alike (the
+    same phrases, the same bubble pattern) differ on every line whose text
+    differs, even when the average difference is small."""
+    a, b = _overlap(sa, sb, d)
+    tot = a + b
+    strong = (np.abs(a - b) > 0.6 * tot) & (tot > 2.0)
+    ink = _ink_rows(a, b)
+    if not ink.any():
+        return 1.0
+    return float(strong[ink].any(axis=1).mean())
+
+
+def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
+                  max_disagree: float = 0.02) -> tuple[int | None, float | None, str]:
+    """Scroll offset d so that B[r] == A[r + d], its score, and, when there is
+    no trustworthy match, the reason. Returns d = None when the bands do not
+    overlap or the best match is not clearly better than the alternatives."""
     h = sa.shape[0]
-    min_overlap = max(20, int(h * 0.08))
+    min_rows = max(20, int(h * 0.03))
     step = 4
-    coarse = _scores(sa[::step], sb[::step], range(-(h // step) + 1, h // step), max(5, min_overlap // step))
+    coarse = _scores(_block(sa, step), _block(sb, step), range(-(h // step) + 1, h // step), max(5, min_rows // step))
     if not coarse:
-        return None
+        return None, None, "no overlap holds enough text to compare"
     coarse.sort()
-    best = None
-    for _, dc in coarse[:5]:
-        for score, d in _scores(sa, sb, range(dc * step - step, dc * step + step + 1), min_overlap):
-            if d != 0 and (best is None or score < best[0]):
-                best = (score, d)
-    if best is None or best[0] > max_score:
-        return None
-    return best[1], best[0]
+    fine: dict[int, float] = {}
+    for _, dc in coarse[:12]:
+        for sc, d in _scores(sa, sb, range(dc * step - step, dc * step + step + 1), min_rows):
+            if d != 0:
+                fine[d] = sc
+    if not fine:
+        return None, None, "no overlap holds enough text to compare"
+    ranked = sorted((sc, d) for d, sc in fine.items())
+    best_score, best_d = ranked[0]
+    if best_score > max_score:
+        return None, best_score, f"best match {best_score:.3f} at {best_d:+d} px is above the limit {max_score:.2f}"
+    good = [(sc, d) for sc, d in ranked if sc <= max_score and _disagreement(sa, sb, d) <= max_disagree]
+    if not good:
+        return None, best_score, (f"best match {best_score:.3f} at {best_d:+d} px only looks alike: "
+                                  f"{_disagreement(sa, sb, best_d):.1%} of text rows disagree")
+    best_score, best_d = good[0]
+    # the same content matching in two separate places cannot be resolved: refuse
+    rivals = [sc for sc, d in good[1:] if abs(d - best_d) > 3 * step]
+    if rivals and rivals[0] < max(best_score * 2.0, best_score + 0.08):
+        return None, best_score, (f"ambiguous: {best_score:.3f} at {best_d:+d} px, "
+                                  f"but another position scores {rivals[0]:.3f}")
+    return best_d, best_score, ""
 
 
-def place_shots(bands: list[np.ndarray], max_score: float = 6.0) -> list[Placement]:
+def match_offset(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3) -> tuple[int, float] | None:
+    d, score, _ = match_details(sa, sb, max_score)
+    return None if d is None else (d, score)
+
+
+def place_shots(bands: list[np.ndarray], max_score: float = 0.3) -> list[Placement]:
     """Put every shot on a shared axis, matching each one against the previous
     shot first and then against every shot already placed."""
-    sigs = [row_signature(b) for b in bands]
+    return _place([row_signature(b) for b in bands], max_score)
+
+
+def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
     placements: list[Placement] = []
     segment = 0
     for i, sig in enumerate(sigs):
@@ -116,16 +189,78 @@ def place_shots(bands: list[np.ndarray], max_score: float = 6.0) -> list[Placeme
             continue
         order = [i - 1] + [j for j in range(i - 2, -1, -1)]
         found = None
+        note = ""
         for j in order:
-            m = match_offset(sigs[j], sig, max_score)
-            if m is not None:
-                found = (j, *m)
+            d, score, why = match_details(sigs[j], sig, max_score)
+            if j == i - 1:
+                note = why
+            if d is not None:
+                found = (j, d, score)
                 break
         if found is None:
             segment += 1
-            placements.append(Placement(segment, 0, None, None))
+            placements.append(Placement(segment, 0, None, None, note))
         else:
             j, d, score = found
             pj = placements[j]
             placements.append(Placement(pj.segment, pj.y + d, j, score))
     return placements
+
+
+def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[int, int] | None:
+    """Find the rows that scroll with the chat.
+
+    The middle of a phone screen is always chat, so shots are first lined up on
+    that alone. Then each row is checked against the shot it was matched with:
+    chat rows reappear shifted by the scroll distance, while the status bar,
+    title, input bar and anything drawn over them stay put. The band grows
+    outwards from the middle until it meets rows that do not move with the
+    chat. Rows without detail (plain background, blurred bars) are neutral.
+    Returns None when no two shots could be lined up.
+    """
+    h = grays[0].shape[0]
+    c0, c1 = int(h * 0.15), int(h * 0.85)
+    sigs = [row_signature(g) for g in grays]
+    places = _place([s[c0:c1] for s in sigs], max_score)
+    errs: list[list[float]] = [[] for _ in range(h)]
+    for i, pl in enumerate(places):
+        if pl.matched_with is None:
+            continue
+        d = pl.y - places[pl.matched_with].y
+        # row r of B shows row r + d of A. Only compare against rows from the
+        # middle of the other shot, which are known to be chat.
+        for x, y, off in ((sigs[i], sigs[pl.matched_with], d), (sigs[pl.matched_with], sigs[i], -d)):
+            for r in range(max(0, c0 - off), min(h, c1 - off)):
+                a, b = x[r], y[r + off]
+                tot = a.sum() + b.sum()
+                if tot > 0.5 * a.shape[0]:
+                    errs[r].append(float(np.abs(a - b).sum() / tot))
+    if not any(errs):
+        return None
+
+    def state(r):
+        if not errs[r]:
+            return 0  # no detail: says nothing
+        return 1 if float(np.median(errs[r])) < 0.25 else -1
+
+    top = c0
+    for r in range(c0, -1, -1):
+        st = state(r)
+        if st < 0:
+            break
+        if st > 0:
+            top = r
+    bottom = c1
+    for r in range(c1, h):
+        st = state(r)
+        if st < 0:
+            break
+        if st > 0:
+            bottom = r + 1
+    return top, bottom
+
+
+def content_band(grays: list[np.ndarray]) -> tuple[int, int]:
+    """Rows of the chat area: from scrolling where shots overlap, otherwise from
+    rows that stay the same in every shot."""
+    return find_content_band(grays) or detect_chrome(grays)

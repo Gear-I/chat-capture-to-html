@@ -87,7 +87,8 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     for i, (s, info) in enumerate(zip(shots, res.shots)):
         pl = info.placement
         where = "" if pl is None else (f"segment {pl.segment + 1}, y={pl.y}" +
-                                       (f", matched #{pl.matched_with + 1} (diff {pl.score:.2f})" if pl.matched_with is not None else ", start of segment"))
+                                       (f", matched #{pl.matched_with + 1} (diff {pl.score:.3f})" if pl.matched_with is not None
+                                        else ", start of segment" + (f"; previous shot: {pl.note}" if pl.note else "")))
         shot_rows.append(
             f'<tr class="{"" if s.status == HASH_OK else "bad"}"><td>#{i + 1}</td>'
             f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a></td>'

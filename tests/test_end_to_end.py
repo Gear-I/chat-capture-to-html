@@ -28,7 +28,7 @@ def norm(s):
 
 
 @needs_ocr
-@pytest.mark.parametrize("style", ["imessage", "ios", "whatsapp"])
+@pytest.mark.parametrize("style", ["imessage", "ios", "ipad", "whatsapp"])
 def test_chat_matches_ground_truth(tmp_path, style):
     folder = make_fixture.make(tmp_path, style)
     expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
@@ -45,6 +45,9 @@ def test_chat_matches_ground_truth(tmp_path, style):
         ratio = difflib.SequenceMatcher(None, norm(" ".join(m.lines)), norm(e["text"])).ratio()
         assert ratio > 0.85, (m.lines, e["text"])
         assert m.sources and all(s.shot < len(cap.shots) for s in m.sources)
+    if style == "ipad":  # only the chat pane is read; boxes still point into the full screenshot
+        assert (res.chat_left, res.chat_right) == (make_fixture.LIST_W + 1, make_fixture.IPAD_W)
+        assert all(s.box[0] >= make_fixture.LIST_W for m in got for s in m.sources)
     if style == "whatsapp":
         times = [m.time for m in got if m.kind == "bubble"]
         assert sum(t == e["time"] for t, e in zip(times, [e for e in expected if e["side"] != "center"])) >= len(times) - 1

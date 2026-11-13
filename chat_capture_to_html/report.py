@@ -171,7 +171,7 @@ tr.bad td{{color:var(--bad)}}
 </div>
 <h2>Bubble colours</h2><div class="card"><ul>{legend or "<li>none</li>"}</ul></div>
 <h2>Screenshots and hashes</h2>
-<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE wrote in the .txt file at capture time. Content band used for matching: rows {res.content_top}–{res.content_bottom}.</p>
+<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE wrote in the .txt file at capture time. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.</p>
 <div class="tw"><table><thead><tr><th></th><th>File</th><th>Computed SHA-256</th><th>Recorded SHA-256</th><th>Check</th><th>Placement</th></tr></thead>
 <tbody>{"".join(shot_rows)}</tbody></table></div>
 {f'<h2>Hash files without a screenshot</h2><ul>{orphans}</ul>' if orphans else ""}

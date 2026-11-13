@@ -1,9 +1,10 @@
 """Build a synthetic UFADE Chat capture folder (no real messages) for tests.
 
-    python tests/make_fixture.py OUT_DIR [--style imessage|ios|whatsapp|both]
+    python tests/make_fixture.py OUT_DIR [--style imessage|ios|ipad|whatsapp|both]
 
 ``ios`` is iMessage drawn the way iOS really composites it: the chat scrolls
 under translucent blurred bars and blue bubbles are shaded by screen position.
+``ipad`` is the same chat on an iPad, beside the conversation list.
 
 Writes ``OUT_DIR/screenshots/<App>/<chat>/`` with overlapping screenshots taken
 while "scrolling up" from the newest message, a ``.txt`` SHA-256 next to each PNG
@@ -134,7 +135,36 @@ def _ios_screen(tall, top, bg, clock, title, gradient):
     return img
 
 
+IPAD_W, IPAD_H, LIST_W = 1640, 2360, 470
+
+
+def _ipad_screen(tall, top, bg, clock, title):
+    """iPad Messages in portrait: the conversation list stays on the left while
+    the chat pane on the right scrolls. The status bar spans the full width."""
+    chat = _ios_screen(tall, top, bg, "", title, gradient=True)
+    pane = Image.new("RGB", (W, IPAD_H), bg)
+    pane.paste(chat.crop((0, 0, W, IPAD_H - FOOTER)), (0, 0))
+    pane.paste(chat.crop((0, H - FOOTER, W, H)), (0, IPAD_H - FOOTER))
+    img = Image.new("RGB", (IPAD_W, IPAD_H), (255, 255, 255))
+    img.paste(pane, (LIST_W, 0))
+    d = ImageDraw.Draw(img)
+    d.text((40, 30), clock, font=font(40), fill=(0, 0, 0))
+    d.text((40, 190), "Messages", font=font(64), fill=(0, 0, 0))
+    for i, (name, preview) in enumerate([(title, "Last message in this test chat."), ("Alex", "See you tomorrow"),
+                                         ("Sam", "Thanks!"), ("Pat", "Call me back"), ("Jo", "On my way")]):
+        y = 320 + i * 170
+        if i == 0:  # the open conversation is highlighted
+            d.rounded_rectangle((16, y - 10, LIST_W - 16, y + 150), 24, fill=(10, 132, 255))
+        c = (255, 255, 255) if i == 0 else (0, 0, 0)
+        d.text((48, y + 10), name, font=font(44), fill=c)
+        d.text((48, y + 75), preview[:18], font=font(34), fill=c if i == 0 else (120, 120, 128))
+    d.line((LIST_W - 1, 0, LIST_W - 1, IPAD_H), fill=(210, 210, 214), width=2)
+    return img
+
+
 def screen(tall, top, bg, clock, title, style):
+    if style == "ipad":
+        return _ipad_screen(tall, top, bg, clock, title)
     if style == "ios":
         return _ios_screen(tall, top, bg, clock, title, gradient=True)
     img = Image.new("RGB", (W, H), bg)
@@ -165,12 +195,12 @@ def screen(tall, top, bg, clock, title, style):
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
-    render_style = "imessage" if style == "ios" else style
+    render_style = "imessage" if style in ("ios", "ipad") else style
     chat = "Test Kontakt"
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     tall, expected, bg = render_chat(render_style)
-    ch = H - HEADER - FOOTER
+    ch = (IPAD_H if style == "ipad" else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
         tops.append(max(t, 0))
@@ -199,7 +229,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
-    ap.add_argument("--style", choices=["imessage", "ios", "whatsapp", "both"], default="both")
+    ap.add_argument("--style", choices=["imessage", "ios", "ipad", "whatsapp", "both"], default="both")
     a = ap.parse_args()
     for s in (["imessage", "whatsapp"] if a.style == "both" else [a.style]):
         print(make(a.out, s))

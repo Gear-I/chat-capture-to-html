@@ -11,7 +11,7 @@ from PIL import Image
 
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
-from .layout import Placement, content_band, place_shots, to_gray
+from .layout import Placement, content_band, find_chat_pane, place_shots, to_gray
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -74,6 +74,8 @@ class ChatResult:
     ocr_engine: str
     bubble_times_stripped: bool
     warnings: list[str]
+    chat_left: int = 0               # columns of the chat pane (iPad: beside the conversation list)
+    chat_right: int = 0
 
 
 # ---------------------------------------------------------------- helpers
@@ -171,6 +173,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     idx = sorted(images)
     H, W = size
     grays = [to_gray(images[i].astype(np.float32)) for i in idx]
+    # On an iPad the conversation list sits beside the chat and never scrolls:
+    # work on the chat pane only, and shift boxes back to screenshot pixels.
+    xo, x_end = find_chat_pane(grays)
+    if (xo, x_end) != (0, W):
+        images = {i: images[i][:, xo:x_end] for i in images}
+        grays = [g[:, xo:x_end] for g in grays]
+        W = x_end - xo
     t_auto, b_auto = content_band(grays) if (top is None or bottom is None) else (top, bottom)
     top = t_auto if top is None else top
     bottom = b_auto if bottom is None else (H - bottom if bottom >= 0 else H)
@@ -223,7 +232,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         sources = []
         for a in members:
             k, b, _, _, _ = inst[a]
-            sources.append(Source(idx[k], (b.x0, b.y0 + top, b.x1, b.y1 + top), b.complete))
+            sources.append(Source(idx[k], (b.x0 + xo, b.y0 + top, b.x1 + xo, b.y1 + top), b.complete))
         complete = [a for a in members if inst[a][1].complete]
         if complete:
             # prefer hash-verified shots, then the copy furthest from either band edge
@@ -280,7 +289,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
             if y0 < 3 or y1 > bh - 3:
                 continue
             g0, g1 = int(pl.y + y0), int(pl.y + y1)
-            src = Source(idx[k], (x0, int(y0) + top, x1, int(y1) + top), True)
+            src = Source(idx[k], (x0 + xo, int(y0) + top, x1 + xo, int(y1) + top), True)
             dup = None
             for m in metas:
                 if m.segment == pl.segment and abs((m.gy0 + m.gy1) / 2 - (g0 + g1) / 2) < 0.6 * (g1 - g0) \
@@ -317,7 +326,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         if not m.lines:
             m.lines = ["[no text recognised — open the screenshot]"]
     return ChatResult(cap, infos, [m for m in allm if not m.is_name_label], segs, top, bottom, header, groups,
-                      engine.describe(), stripped, warnings)
+                      engine.describe(), stripped, warnings, xo, xo + W)
 
 
 def _attach_names(allm: list[Message], width: int) -> None:

@@ -46,3 +46,20 @@ def test_shots_that_do_not_overlap_leave_a_gap(style):
     assert places[1].segment == 0 and places[1].y == -600
     assert places[2].segment == 1 and places[2].matched_with is None
     assert places[2].note  # the reason is recorded for the report
+
+
+def test_chat_pane_beside_a_fixed_list():
+    from chat_capture_to_html.layout import find_chat_pane
+    tall, _, bg = mf.render_chat("imessage", rounds=2)
+    bottom = tall.height - (mf.IPAD_H - mf.HEADER - mf.FOOTER)
+    grays = [to_gray(np.asarray(mf.screen(tall, t, bg, "9:41", "Test", "ipad")).astype(np.float32))
+             for t in (bottom, bottom - 500, bottom - 1100)]
+    x0, x1 = find_chat_pane(grays)
+    assert mf.LIST_W - 2 <= x0 <= mf.LIST_W + 10 and x1 == mf.IPAD_W
+
+
+@pytest.mark.parametrize("style", ["imessage", "ios", "whatsapp"])
+def test_full_width_chat_keeps_full_width(style):
+    from chat_capture_to_html.layout import find_chat_pane
+    grays, _ = _shots(style, [3000, 2400, 1800])
+    assert find_chat_pane(grays) == (0, mf.W)

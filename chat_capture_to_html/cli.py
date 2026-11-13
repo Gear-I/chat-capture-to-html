@@ -19,7 +19,7 @@ def _safe(name: str) -> str:
 def _diagnose(res) -> None:
     sizes = {(i.width, i.height) for i in res.shots if i.used}
     print(f"  screen size: {', '.join(f'{w}x{h}' for w, h in sorted(sizes))}")
-    print(f"  content band: rows {res.content_top}-{res.content_bottom}")
+    print(f"  content band: rows {res.content_top}-{res.content_bottom}, columns {res.chat_left}-{res.chat_right}")
     for n, (shot, info) in enumerate(zip(res.capture.shots, res.shots), 1):
         pl = info.placement
         if pl is None:

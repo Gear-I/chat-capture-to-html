@@ -264,3 +264,53 @@ def content_band(grays: list[np.ndarray]) -> tuple[int, int]:
     """Rows of the chat area: from scrolling where shots overlap, otherwise from
     rows that stay the same in every shot."""
     return find_content_band(grays) or detect_chrome(grays)
+
+
+def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
+    """Columns of the chat when it shares the screen with something that does
+    not scroll, such as the conversation list on an iPad.
+
+    Over the middle rows of the screen (away from the status bar and the input
+    bar) the chat pane changes from shot to shot while a side list stays the
+    same. The widest run of changing columns is the pane, widened over the
+    plain margin beside it. The full width is returned when the chat fills
+    nearly the whole screen or when it cannot be told apart.
+    """
+    h, w = grays[0].shape
+    if len(grays) < 2:
+        return 0, w
+    mid = slice(int(h * 0.15), int(h * 0.85))
+    stack = np.stack([g[mid] for g in grays])
+    change = np.abs(stack - stack[0]).max(axis=0).mean(axis=0)  # per column
+    moving = change > 2.0
+    gap = max(2, int(w * 0.01))
+    runs, start, quiet = [], None, 0
+    for x in range(w):
+        if moving[x]:
+            if start is None:
+                start = x
+            quiet, last = 0, x
+        elif start is not None:
+            quiet += 1
+            if quiet > gap:
+                runs.append((start, last + 1))
+                start, quiet = None, 0
+    if start is not None:
+        runs.append((start, last + 1))
+    if not runs:
+        return 0, w
+    x0, x1 = max(runs, key=lambda r: r[1] - r[0])
+    if x1 - x0 < w * 0.3 or (x1 - x0) > w * 0.85:
+        return 0, w
+
+    # widen over the plain margin: columns that never change and carry no
+    # detail, stopping at a divider line or the side list
+    detail = np.abs(np.diff(stack, axis=1)).mean(axis=(0, 1))  # per column
+    def flat(x):
+        return change[x] <= 2.0 and detail[min(x, w - 1)] < 0.5 and \
+            abs(float(stack[0][:, x].mean()) - float(stack[0][:, x0].mean())) < 8
+    while x0 > 0 and flat(x0 - 1):
+        x0 -= 1
+    while x1 < w and flat(x1):
+        x1 += 1
+    return (0, w) if (x1 - x0) > w * 0.9 else (x0, x1)

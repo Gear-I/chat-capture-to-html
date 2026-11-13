@@ -55,6 +55,7 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | `--lang deu+eng` | Tesseract languages (default: `deu+eng` where installed) |
 | `--tesseract PATH` | Path to `tesseract.exe` if it is somewhere unusual |
 | `--top N`, `--bottom N` | Pixels of fixed header/footer to ignore, if detection gets them wrong |
+| `--left N`, `--right N` | Pixels on the left/right that are not the chat (for example the iPad conversation list), if detection gets them wrong. Read the divider's position in an image viewer that shows pixel coordinates |
 | `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
 | `--diagnose` | Print screen size, the chat area found and how each screenshot was lined up, in numbers only (no message text), so the output can be shared when something looks wrong |
 

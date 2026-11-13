@@ -282,6 +282,14 @@ def content_band(grays: list[np.ndarray]) -> tuple[int, int, list[Placement]]:
     return (*(band or detect_chrome(grays)), middle)
 
 
+def column_change(grays: list[np.ndarray]) -> np.ndarray:
+    """Per column, how much the middle rows (15-85% of the height) change from
+    the first shot in the worst shot, as a mean grey-level difference."""
+    h = grays[0].shape[0]
+    stack = np.stack([g[int(h * 0.15):int(h * 0.85)] for g in grays])
+    return np.abs(stack - stack[0]).max(axis=0).mean(axis=0)
+
+
 def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
     """Columns of the chat when it shares the screen with something that does
     not scroll, such as the conversation list on an iPad.
@@ -297,7 +305,7 @@ def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:
         return 0, w
     mid = slice(int(h * 0.15), int(h * 0.85))
     stack = np.stack([g[mid] for g in grays])
-    change = np.abs(stack - stack[0]).max(axis=0).mean(axis=0)  # per column
+    change = column_change(grays)
     moving = change > 2.0
     gap = max(2, int(w * 0.01))
     runs, start, quiet = [], None, 0

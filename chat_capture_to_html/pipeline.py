@@ -11,7 +11,7 @@ from PIL import Image
 
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
-from .layout import Placement, content_band, find_chat_pane, place_shots, to_gray
+from .layout import Placement, column_change, content_band, find_chat_pane, place_shots, to_gray
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -77,6 +77,7 @@ class ChatResult:
     chat_left: int = 0               # columns of the chat pane (iPad: beside the conversation list)
     chat_right: int = 0
     middle_match: dict[int, Placement] = field(default_factory=dict)  # shot index -> first try on the middle rows
+    column_change: list[float] = field(default_factory=list)  # per 1/40 of the width, for --diagnose
 
 
 # ---------------------------------------------------------------- helpers
@@ -145,7 +146,8 @@ class _UF:
 # ---------------------------------------------------------------- main
 
 def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None = None,
-               include_unverified: bool = True, min_conf: float = 45.0, progress=lambda s: None) -> ChatResult:
+               include_unverified: bool = True, min_conf: float = 45.0, progress=lambda s: None,
+               left: int | None = None, right: int | None = None) -> ChatResult:
     warnings: list[str] = []
     infos = [ShotInfo() for _ in cap.shots]
     images: dict[int, np.ndarray] = {}
@@ -176,7 +178,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     grays = [to_gray(images[i].astype(np.float32)) for i in idx]
     # On an iPad the conversation list sits beside the chat and never scrolls:
     # work on the chat pane only, and shift boxes back to screenshot pixels.
-    xo, x_end = find_chat_pane(grays)
+    profile = column_change(grays) if len(grays) > 1 else np.zeros(W)
+    if left is None and right is None:
+        xo, x_end = find_chat_pane(grays)
+    else:
+        auto = find_chat_pane(grays)
+        xo = auto[0] if left is None else max(0, min(left, W - 1))
+        x_end = auto[1] if right is None else max(xo + 1, W - right)
     if (xo, x_end) != (0, W):
         images = {i: images[i][:, xo:x_end] for i in images}
         grays = [g[:, xo:x_end] for g in grays]
@@ -333,7 +341,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     return ChatResult(cap, infos, [m for m in allm if not m.is_name_label], segs, top, bottom, header, groups,
                       engine.describe(), stripped, warnings, xo, xo + W,
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
-                                         p.score, p.note) for k, p in enumerate(middle)})
+                                         p.score, p.note) for k, p in enumerate(middle)},
+                      [float(c.mean()) for c in np.array_split(profile, 40)])
 
 
 def _attach_names(allm: list[Message], width: int) -> None:

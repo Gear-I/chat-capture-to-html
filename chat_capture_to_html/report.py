@@ -6,6 +6,7 @@ of the evidence. Links are relative to the HTML file when possible.
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import os
@@ -15,6 +16,10 @@ from pathlib import Path
 from . import __version__
 from .capture import HASH_OK
 from .pipeline import ChatResult
+
+# The logo as the report's tab icon, inline so the report stays one file.
+_LOGO = Path(__file__).with_name("logo.svg")
+FAVICON = ("data:image/svg+xml;base64," + base64.b64encode(_LOGO.read_bytes()).decode("ascii")) if _LOGO.exists() else ""
 
 STATUS_TEXT = {"ok": "verified", "mismatch": "HASH MISMATCH", "missing": "no hash file", "unreadable": "hash file unreadable"}
 
@@ -120,6 +125,7 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{e(cap.chat)} — chat capture</title>
+{f'<link rel="icon" type="image/svg+xml" href="{FAVICON}">' if FAVICON else ""}
 <style>
 :root{{--bg:#f6f6f4;--fg:#1c1c1e;--mut:#6b6b70;--card:#fff;--line:#dcdcdf;--bad:#b42318;--badbg:#fdecea;--acc:#0a5bd8}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#151517;--fg:#ececee;--mut:#9a9aa0;--card:#1f1f22;--line:#333338;--bad:#ff8a80;--badbg:#3a1c1a;--acc:#7fb0ff}}}}

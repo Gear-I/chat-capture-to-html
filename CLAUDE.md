@@ -88,6 +88,9 @@ on real captures.
 3. Commit messages, PR titles and descriptions, code comments and docs
    contain no AI attribution: no `Co-Authored-By: Claude`, no
    "Generated with Claude Code", no session links, no model names.
+   The one exception is the author line at the top of the README
+   ("Author: Dielle De Noon (@Gear-I), with Claude."), which the owner
+   chose; keep it as it is.
 4. Open pull requests as drafts. The repository owner marks them ready
    and merges.
 5. GitHub Actions are pinned to full commit SHAs, with read-only

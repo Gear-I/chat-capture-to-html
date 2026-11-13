@@ -20,3 +20,6 @@ chat-capture-to-html = "chat_capture_to_html.cli:main"
 
 [tool.setuptools]
 packages = ["chat_capture_to_html"]
+
+[tool.setuptools.package-data]
+chat_capture_to_html = ["logo.svg"]

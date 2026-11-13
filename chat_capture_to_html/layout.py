@@ -159,6 +159,35 @@ def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     return float(strong[ink].mean())
 
 
+def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
+    """Where the disagreeing text sits, for --diagnose: the share of text rows
+    that disagree in each eighth of the later shot's chat area from top to
+    bottom, and the share of detailed column strips that disagree in each
+    eighth of its width from left to right. Numbers only."""
+    a, b = _overlap(sa, sb, d)
+    h = sb.shape[0]
+    strong = np.ones(a.shape, bool)
+    for o in (-1, 0, 1):
+        bb = np.roll(b, o, axis=0)
+        tot = a + bb
+        strong &= (np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)
+    ink = _ink_rows(a, b)
+    rows = np.arange(max(0, -d), max(0, -d) + a.shape[0])  # these rows of the later shot
+    strong_rows = strong.any(axis=1)
+    by_row = []
+    for k in range(8):
+        sel = ink & (rows * 8 // h == k)
+        by_row.append("-" if not sel.any() else f"{100 * float(strong_rows[sel].mean()):.0f}")
+    cells = (a + b) > 2.0
+    nstrip = a.shape[1]
+    by_col = []
+    for k in range(8):
+        cols = slice(k * nstrip // 8, (k + 1) * nstrip // 8)
+        c = cells[:, cols]
+        by_col.append("-" if not c.any() else f"{100 * float(strong[:, cols][c].mean()):.0f}")
+    return f"disagreeing by eighth, top to bottom: {' '.join(by_row)}%; left to right: {' '.join(by_col)}%"
+
+
 def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
                   max_disagree: float = 0.05) -> tuple[int | None, float | None, str]:
     """Scroll offset d so that B[r] == A[r + d], its score, and, when there is
@@ -194,7 +223,8 @@ def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
                 good.append((sc, d, dis))
     if not good:
         return None, best_score, (f"best match {best_score:.3f} at {best_d:+d} px only looks alike: "
-                                  f"{_disagreement(sa, sb, best_d):.1%} of text rows disagree")
+                                  f"{_disagreement(sa, sb, best_d):.1%} of text rows disagree "
+                                  f"({_where_disagreeing(sa, sb, best_d)})")
     best_score, best_d, best_dis = good[0]
     # The same content matching about as cleanly in a second, separate place
     # (by average difference and by disagreeing rows) cannot be resolved: refuse.

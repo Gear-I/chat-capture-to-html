@@ -76,6 +76,7 @@ class ChatResult:
     warnings: list[str]
     chat_left: int = 0               # columns of the chat pane (iPad: beside the conversation list)
     chat_right: int = 0
+    middle_match: dict[int, Placement] = field(default_factory=dict)  # shot index -> first try on the middle rows
 
 
 # ---------------------------------------------------------------- helpers
@@ -180,7 +181,11 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         images = {i: images[i][:, xo:x_end] for i in images}
         grays = [g[:, xo:x_end] for g in grays]
         W = x_end - xo
-    t_auto, b_auto = content_band(grays) if (top is None or bottom is None) else (top, bottom)
+    middle: list[Placement] = []
+    if top is None or bottom is None:
+        t_auto, b_auto, middle = content_band(grays)
+    else:
+        t_auto, b_auto = top, bottom
     top = t_auto if top is None else top
     bottom = b_auto if bottom is None else (H - bottom if bottom >= 0 else H)
     bands = [images[i][top:bottom] for i in idx]
@@ -326,7 +331,9 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         if not m.lines:
             m.lines = ["[no text recognised — open the screenshot]"]
     return ChatResult(cap, infos, [m for m in allm if not m.is_name_label], segs, top, bottom, header, groups,
-                      engine.describe(), stripped, warnings, xo, xo + W)
+                      engine.describe(), stripped, warnings, xo, xo + W,
+                      {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
+                                         p.score, p.note) for k, p in enumerate(middle)})
 
 
 def _attach_names(allm: list[Message], width: int) -> None:

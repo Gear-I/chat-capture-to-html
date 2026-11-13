@@ -220,7 +220,7 @@ def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
     return placements
 
 
-def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[int, int] | None:
+def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[tuple[int, int] | None, list[Placement]]:
     """Find the rows that scroll with the chat.
 
     The middle of a phone screen is always chat, so shots are first lined up on
@@ -229,7 +229,8 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
     title, input bar and anything drawn over them stay put. The band grows
     outwards from the middle until it meets rows that do not move with the
     chat. Rows without detail (plain background, blurred bars) are neutral.
-    Returns None when no two shots could be lined up.
+    Returns the band (None when no two shots could be lined up) and how the
+    shots were lined up on the middle of the screen, for diagnosis.
     """
     h = grays[0].shape[0]
     c0, c1 = int(h * 0.15), int(h * 0.85)
@@ -249,7 +250,7 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
                 if tot > 0.5 * a.shape[0]:
                     errs[r].append(float(np.abs(a - b).sum() / tot))
     if not any(errs):
-        return None
+        return None, places
 
     def state(r):
         if not errs[r]:
@@ -270,13 +271,15 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3) -> tuple[
             break
         if st > 0:
             bottom = r + 1
-    return top, bottom
+    return (top, bottom), places
 
 
-def content_band(grays: list[np.ndarray]) -> tuple[int, int]:
+def content_band(grays: list[np.ndarray]) -> tuple[int, int, list[Placement]]:
     """Rows of the chat area: from scrolling where shots overlap, otherwise from
-    rows that stay the same in every shot."""
-    return find_content_band(grays) or detect_chrome(grays)
+    rows that stay the same in every shot. Also returns how the shots lined up
+    on the middle of the screen."""
+    band, middle = find_content_band(grays)
+    return (*(band or detect_chrome(grays)), middle)
 
 
 def find_chat_pane(grays: list[np.ndarray]) -> tuple[int, int]:

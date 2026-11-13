@@ -138,10 +138,15 @@ def _ios_screen(tall, top, bg, clock, title, gradient):
 IPAD_W, IPAD_H, LIST_W = 1640, 2360, 470
 
 
-def _ipad_screen(tall, top, bg, clock, title):
+def _ipad_screen(tall, top, bg, clock, title, subpixel=0.0):
     """iPad Messages in portrait: the conversation list stays on the left while
-    the chat pane on the right scrolls. The status bar spans the full width."""
+    the chat pane on the right scrolls. The status bar spans the full width.
+    ``subpixel`` redraws the chat as if scrolling stopped between two pixels."""
     chat = _ios_screen(tall, top, bg, "", title, gradient=True)
+    if subpixel:
+        body = chat.crop((0, HEADER, W, H - FOOTER))
+        body = body.transform(body.size, Image.AFFINE, (1, 0, 0, 0, 1, subpixel), resample=Image.BILINEAR)
+        chat.paste(body, (0, HEADER))
     pane = Image.new("RGB", (W, IPAD_H), bg)
     pane.paste(chat.crop((0, 0, W, IPAD_H - FOOTER)), (0, 0))
     pane.paste(chat.crop((0, H - FOOTER, W, H)), (0, IPAD_H - FOOTER))
@@ -162,9 +167,9 @@ def _ipad_screen(tall, top, bg, clock, title):
     return img
 
 
-def screen(tall, top, bg, clock, title, style):
+def screen(tall, top, bg, clock, title, style, subpixel=0.0):
     if style == "ipad":
-        return _ipad_screen(tall, top, bg, clock, title)
+        return _ipad_screen(tall, top, bg, clock, title, subpixel)
     if style == "ios":
         return _ios_screen(tall, top, bg, clock, title, gradient=True)
     img = Image.new("RGB", (W, H), bg)
@@ -208,12 +213,14 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
             break
         t -= rnd.randint(int(ch * 0.3), int(ch * 0.55))
     when = datetime(2026, 11, 12, 14, 30, 5)
-    last = None
+    last, n = None, 0
     for i, top in enumerate(tops):
         clock = "9:41" if i < len(tops) // 2 else "9:42"
-        img = screen(tall, top, bg, clock, chat, style)
+        sub = rnd.choice([0.25, 0.5, 0.75]) if style == "ipad" and i else 0.0
+        img = screen(tall, top, bg, clock, chat, style, sub)
         stamp = when.strftime("%m_%d_%Y_%H_%M_%S")
-        name = f"{chat}_{stamp}" if stamp != last else f"{chat}_{stamp}_1"
+        n = n + 1 if stamp == last else 0  # UFADE adds _1, _2, ... within the same second
+        name = f"{chat}_{stamp}" + (f"_{n}" if n else "")
         last = stamp
         png = folder / f"{name}.png"
         img.save(png)

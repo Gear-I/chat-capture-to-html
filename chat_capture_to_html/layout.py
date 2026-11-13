@@ -123,18 +123,25 @@ def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     """Share of text rows in the overlap where some column strip clearly
     differs. A true match is near zero; screens that merely look alike (the
     same phrases, the same bubble pattern) differ on every line whose text
-    differs, even when the average difference is small."""
+    differs, even when the average difference is small.
+
+    iOS often stops scrolling between two pixels and redraws text slightly
+    shifted, so a row only counts as disagreeing when it differs from the
+    other shot's row and from both of its neighbours."""
     a, b = _overlap(sa, sb, d)
-    tot = a + b
-    strong = (np.abs(a - b) > 0.6 * tot) & (tot > 2.0)
     ink = _ink_rows(a, b)
     if not ink.any():
         return 1.0
-    return float(strong[ink].any(axis=1).mean())
+    strong = np.ones(a.shape[0], bool)
+    for o in (-1, 0, 1):
+        bb = np.roll(b, o, axis=0)
+        tot = a + bb
+        strong &= ((np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)).any(axis=1)
+    return float(strong[ink].mean())
 
 
 def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
-                  max_disagree: float = 0.02) -> tuple[int | None, float | None, str]:
+                  max_disagree: float = 0.05) -> tuple[int | None, float | None, str]:
     """Scroll offset d so that B[r] == A[r + d], its score, and, when there is
     no trustworthy match, the reason. Returns d = None when the bands do not
     overlap or the best match is not clearly better than the alternatives."""
@@ -156,16 +163,22 @@ def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
     best_score, best_d = ranked[0]
     if best_score > max_score:
         return None, best_score, f"best match {best_score:.3f} at {best_d:+d} px is above the limit {max_score:.2f}"
-    good = [(sc, d) for sc, d in ranked if sc <= max_score and _disagreement(sa, sb, d) <= max_disagree]
+    good = []
+    for sc, d in ranked:
+        if sc <= max_score:
+            dis = _disagreement(sa, sb, d)
+            if dis <= max_disagree:
+                good.append((sc, d, dis))
     if not good:
         return None, best_score, (f"best match {best_score:.3f} at {best_d:+d} px only looks alike: "
                                   f"{_disagreement(sa, sb, best_d):.1%} of text rows disagree")
-    best_score, best_d = good[0]
-    # the same content matching in two separate places cannot be resolved: refuse
-    rivals = [sc for sc, d in good[1:] if abs(d - best_d) > 3 * step]
-    if rivals and rivals[0] < max(best_score * 2.0, best_score + 0.08):
-        return None, best_score, (f"ambiguous: {best_score:.3f} at {best_d:+d} px, "
-                                  f"but another position scores {rivals[0]:.3f}")
+    best_score, best_d, best_dis = good[0]
+    # The same content matching about as cleanly in a second, separate place
+    # (by average difference and by disagreeing rows) cannot be resolved: refuse.
+    for sc, d, dis in good[1:]:
+        if abs(d - best_d) > 3 * step and sc <= best_score * 2 + 0.01 and dis <= best_dis * 2 + 0.01:
+            return None, best_score, (f"ambiguous: {best_score:.3f} at {best_d:+d} px, "
+                                      f"but {sc:.3f} at {d:+d} px matches about as well")
     return best_d, best_score, ""
 
 

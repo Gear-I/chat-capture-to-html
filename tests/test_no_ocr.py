@@ -59,3 +59,17 @@ def test_same_app_and_chat_name_do_not_overwrite(tmp_path):
     cli.main([str(tmp_path), "-o", str(tmp_path / "out"), "--no-ocr", "-q"])
     assert sorted(p.name for p in (tmp_path / "out").glob("*.html")) == \
         ["Messages_Test Kontakt.html", "Messages_Test Kontakt_2.html"]
+
+
+@pytest.mark.parametrize("strip", [10, 60])
+def test_list_strip_inside_the_pane(tmp_path, strip):
+    """Like the real dark-mode iPad capture: a sliver of the conversation list
+    ends up inside the chat pane. It must neither spoil the matching (it stays
+    put while the chat scrolls) nor swallow the date lines (its text has ink on
+    almost every row)."""
+    folder = make_fixture.make(tmp_path, "ipad-dark")
+    expected = json.loads((tmp_path / "expected_ipad-dark.json").read_text(encoding="utf-8"))
+    res = build_chat(load_capture(folder), None, left=make_fixture.LIST_W - strip)
+    assert len(res.segment_order) == 1, res.warnings
+    assert [m.side for m in res.messages] == [e["side"] for e in expected]
+    assert sum(m.kind == "meta" for m in res.messages) == sum(e["side"] == "center" for e in expected)

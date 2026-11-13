@@ -80,6 +80,10 @@ on real captures.
   `eng` for the end-to-end tests).
 - Keep the README's options table and "Limits" section in step with
   behaviour.
+- Raise the version (`chat_capture_to_html/__init__.py` and
+  `pyproject.toml`) in every pull request that changes what the tool
+  reports or how it works. The version is printed first on every run, and
+  it is how the examiner can tell which code produced a report.
 
 ## 7. Git, commits and pull requests
 

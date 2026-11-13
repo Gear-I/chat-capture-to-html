@@ -18,3 +18,10 @@ def test_readme_header():
     assert 'src="assets/logo.svg"' in text
     assert text.rstrip("\n").splitlines()[-1] == "Author: Dielle De Noon (@Gear-I), with Claude"
     assert "## License\n\nGNU General Public License v3.0, see [LICENSE](LICENSE)." in text
+
+
+def test_version_is_the_same_everywhere():
+    import re
+    from chat_capture_to_html import __version__
+    toml = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^version = "([^"]+)"', toml, re.M).group(1) == __version__

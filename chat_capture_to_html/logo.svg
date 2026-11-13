@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="t">
+  <title id="t">chat-capture-to-html logo: two overlapping screenshots with chat bubbles and a verified hash badge</title>
+  <rect width="256" height="256" rx="56" fill="#1B2A41"/>
+  <!-- back screenshot -->
+  <g transform="rotate(-9 104 122)">
+    <rect x="52" y="44" width="104" height="156" rx="16" fill="#3A5170"/>
+    <rect x="66" y="70" width="52" height="16" rx="8" fill="#5D7698"/>
+    <rect x="90" y="96" width="52" height="16" rx="8" fill="#5D7698"/>
+    <rect x="66" y="122" width="44" height="16" rx="8" fill="#5D7698"/>
+  </g>
+  <!-- front screenshot -->
+  <rect x="98" y="52" width="112" height="164" rx="18" fill="#F4F7FB"/>
+  <rect x="112" y="80" width="58" height="22" rx="11" fill="#C9D3DF"/>
+  <rect x="138" y="112" width="58" height="22" rx="11" fill="#2F80ED"/>
+  <rect x="112" y="144" width="46" height="22" rx="11" fill="#C9D3DF"/>
+  <!-- verified hash badge -->
+  <circle cx="72" cy="186" r="40" fill="#2BB673" stroke="#1B2A41" stroke-width="8"/>
+  <g stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M62 166 L56 206 M80 166 L74 206 M50 178 L90 178 M48 194 L88 194"/>
+  </g>
+</svg>

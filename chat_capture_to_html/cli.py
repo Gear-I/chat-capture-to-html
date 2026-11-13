@@ -20,6 +20,13 @@ def _diagnose(res) -> None:
     sizes = {(i.width, i.height) for i in res.shots if i.used}
     print(f"  screen size: {', '.join(f'{w}x{h}' for w, h in sorted(sizes))}")
     print(f"  content band: rows {res.content_top}-{res.content_bottom}, columns {res.chat_left}-{res.chat_right}")
+    if res.column_change:
+        w = max(i.width for i in res.shots if i.used)
+        step = w / len(res.column_change)
+        print("  change between shots across the width (middle rows; 0 = never changes):")
+        for k in range(0, len(res.column_change), 10):
+            print("    " + "  ".join(f"{int(round((k + j) * step)):>4}:{v:5.1f}"
+                                     for j, v in enumerate(res.column_change[k:k + 10])))
     if res.middle_match:
         print("  lining up on the middle of the screen (used to find the chat area):")
         for i, mp in sorted(res.middle_match.items()):
@@ -57,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tesseract", help="path to tesseract executable")
     p.add_argument("--top", type=int, help="pixels of fixed header to ignore (default: detected)")
     p.add_argument("--bottom", type=int, help="pixels of fixed footer to ignore (default: detected)")
+    p.add_argument("--left", type=int, help="pixels on the left that are not the chat, e.g. the iPad conversation list "
+                                            "(default: detected)")
+    p.add_argument("--right", type=int, help="pixels on the right that are not the chat (default: detected)")
     p.add_argument("--verified-only", action="store_true", help="leave out screenshots whose hash does not verify")
     p.add_argument("--diagnose", action="store_true",
                    help="print screen size, header/footer rows and how each screenshot was lined up "
@@ -101,7 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         target = out_file or out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}.html"
         if folder.resolve() in target.resolve().parents:
             say("  ! writing the report inside the evidence folder")
-        res = build_chat(cap, engine, a.top, a.bottom, include_unverified=not a.verified_only, progress=lambda s: say("  " + s))
+        res = build_chat(cap, engine, a.top, a.bottom, include_unverified=not a.verified_only, progress=lambda s: say("  " + s),
+                         left=a.left, right=a.right)
         target.write_text(render(res, target, a.me, a.them or cap.chat), encoding="utf-8")
         say(f"  {sum(1 for m in res.messages if m.kind == 'bubble')} messages -> {target}")
         for w in res.warnings:

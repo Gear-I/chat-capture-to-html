@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--them", help="label for left-hand bubbles (default: the chat folder name)")
     p.add_argument("--ocr", choices=["auto", "tesseract", "rapidocr"], default="auto",
                    help="OCR engine; auto prefers Tesseract, then RapidOCR")
+    p.add_argument("--no-ocr", action="store_true",
+                   help="read no text: show each message as it appears in its screenshot (no Tesseract needed)")
     p.add_argument("--lang", help="Tesseract languages, e.g. deu+eng (default: deu+eng where installed)")
     p.add_argument("--tesseract", help="path to tesseract executable")
     p.add_argument("--top", type=int, help="pixels of fixed header to ignore (default: detected)")
@@ -81,13 +83,18 @@ def main(argv: list[str] | None = None) -> int:
     folders = find_capture_folders(a.folder)
     if not folders:
         p.error(f"no PNG screenshots under {a.folder}")
-    try:
-        engine = make_engine(a.ocr, a.tesseract, a.lang)
-    except OcrError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 3
     say(f"chat-capture-to-html {__version__}")
-    say(f"OCR: {engine.describe()}")
+    if a.no_ocr:
+        engine = None
+        say("OCR: off (--no-ocr)")
+    else:
+        try:
+            engine = make_engine(a.ocr, a.tesseract, a.lang)
+        except OcrError as e:
+            print(f"error: {e}", file=sys.stderr)
+            print("Use --no-ocr to make the report without reading any text.", file=sys.stderr)
+            return 3
+        say(f"OCR: {engine.describe()}")
 
     single = len(folders) == 1
     if a.output is None:
@@ -109,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         if bad or cap.orphan_hash_files:
             worst = 2
         target = out_file or out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}.html"
+        n = 2
+        while target in written:  # two capture folders with the same app and chat name
+            target = out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}_{n}.html"
+            n += 1
         if folder.resolve() in target.resolve().parents:
             say("  ! writing the report inside the evidence folder")
         res = build_chat(cap, engine, a.top, a.bottom, include_unverified=not a.verified_only, progress=lambda s: say("  " + s),

@@ -37,6 +37,28 @@ def _hex(c) -> str:
     return "#%02x%02x%02x" % tuple(c)
 
 
+def _views(m, shots, info, hrefs, e) -> str:
+    """The message as it looks in the screenshot: the original PNG, shown through
+    a window the size of the bubble. No image is cut out or saved; the page
+    only positions the linked file."""
+    out = []
+    for v in m.views:
+        x0, y0, x1, y1 = v.box
+        w, h = max(1, x1 - x0), max(1, y1 - y0)
+        iw = info[v.shot].width or w
+        # screen pixels per point: 3 on most phones, 2 on small phones and iPads
+        dpr = 2 if iw <= 900 or iw > 1400 else 3
+        s = shots[v.shot]
+        alt = f"{'Message' if m.kind == 'bubble' else 'Line'} as shown in screenshot #{v.shot + 1}"
+        out.append(
+            f'<a class="view" href="{e(hrefs[v.shot])}" data-shot="{v.shot}" data-box="{x0},{y0},{x1},{y1}" '
+            f'title="{e(s.path.name)}&#10;SHA-256 {s.sha256}" '
+            f'style="width:{w / dpr:.0f}px;aspect-ratio:{w}/{h}">'
+            f'<img src="{e(hrefs[v.shot])}" alt="{e(alt)}" loading="lazy" '
+            f'style="width:{iw / w * 100:.4f}%;left:{-x0 / w * 100:.4f}%;top:{-y0 / h * 100:.4f}%"></a>')
+    return "".join(out)
+
+
 def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     cap = res.capture
     out_dir = out_path.parent
@@ -63,8 +85,8 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             f'title="{e(shots[s.shot].path.name)}&#10;SHA-256 {shots[s.shot].sha256}&#10;{STATUS_TEXT[shots[s.shot].status]}'
             f'{" — text read from this shot" if s.shot in m.text_from else ""}">#{s.shot + 1}</a>'
             for s in m.sources)
-        text = "<br>".join(e(l) for l in m.lines)
-        conf = f"OCR confidence {m.conf:.0f}%"
+        text = "<br>".join(e(l) for l in m.lines) if m.lines else _views(m, shots, res.shots, hrefs, e)
+        conf = f" · OCR confidence {m.conf:.0f}%" if res.text_read else ""
         lowc = " low" if m.conf < 60 else ""
         hash_line = (f'<span class="hash{" bad" if ps.status != HASH_OK else ""}">'
                      f'{e(ps.path.name)} · SHA-256 <code>{ps.sha256}</code> · {STATUS_TEXT[ps.status]}</span>')
@@ -81,9 +103,9 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         rows.append(
             f'<div class="msg {m.side}{" warn" if bad else ""}" id="m{n}">'
             f'<div class="who">{swatch}{e(who)}{side_note}</div>'
-            f'<div class="bubble" style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
+            f'<div class="bubble{"" if m.lines else " image"}" style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
             f'<div class="foot"><a class="n" href="#m{n}">#{n}</a>'
-            f'{f" · {e(m.time)}" if m.time else ""} · <span class="conf{lowc}">{conf}</span> · '
+            f'{f" · {e(m.time)}" if m.time else ""}<span class="conf{lowc}">{conf}</span> · '
             f'screenshots {src_links}</div>'
             f'<div class="foot">{hash_line}</div></div>')
 
@@ -140,6 +162,10 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}}dt
 .who{{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}}.side{{opacity:.8}}
 .bubble{{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--bc);border-radius:12px;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:3px 0}}
 .right .bubble{{border-left-width:1px;border-right:5px solid var(--bc)}}
+.bubble.image{{padding:4px;white-space:normal;width:fit-content;max-width:100%}}
+.view{{display:block;position:relative;overflow:hidden;border-radius:10px;background:var(--line);max-width:100%}}.view+.view{{margin-top:4px}}
+.view img{{position:absolute;max-width:none;height:auto;display:block}}
+.meta .view{{margin:0 auto}}
 .foot{{font-size:12px;color:var(--mut);overflow-wrap:anywhere}}.right .foot{{text-align:right}}
 .hash{{font-size:11px}}.hash code{{font-size:11px}}.bad,.bad a,.hash.bad{{color:var(--bad);font-weight:600}}
 .warn .bubble{{outline:2px solid var(--bad)}}
@@ -166,12 +192,12 @@ tr.bad td{{color:var(--bad)}}
 <dt>Screenshots</dt><dd>{len(shots)} ({n_ok} hash-verified)</dd>
 <dt>Captured</dt><dd>{e(span)}</dd>
 <dt>Senders</dt><dd>right-hand bubbles = {e(me)}; left-hand bubbles = {e(them)}</dd>
-<dt>OCR</dt><dd>{e(res.ocr_engine)}, offline</dd>
+<dt>OCR</dt><dd>{e(res.ocr_engine) + ", offline" if res.text_read else "off (--no-ocr): each message is shown as it appears in its screenshot"}</dd>
 <dt>Generated</dt><dd>{e(generated)} by chat-capture-to-html {__version__}</dd>
 </dl></div>
 {f'<h2>Warnings</h2><div class="card warns"><ul>{warns}</ul></div>' if warns else ""}
 <h2>Chat</h2>
-<p class="foot">Text is machine-read (OCR) and can contain errors: the screenshot is the evidence. Click a <b>#n</b> screenshot link to see where the message is in that shot; hover it for the file name and SHA-256.{" Times shown were split off the end of each bubble." if res.bubble_times_stripped else ""}</p>
+<p class="foot">{"Text is machine-read (OCR) and can contain errors: the screenshot is the evidence." if res.text_read else "No text was machine-read: each message is the original screenshot, shown through a window around the bubble."} Click a <b>#n</b> screenshot link to see where the message is in that shot; hover it for the file name and SHA-256.{" Times shown were split off the end of each bubble." if res.bubble_times_stripped else ""}</p>
 <div class="chat">
 {chr(10).join(rows) if rows else "<p>No messages found.</p>"}
 </div>

@@ -11,6 +11,8 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 3. **Lines up the overlapping shots.** On an iPad, where the conversation list stays beside the chat, it first finds the chat pane (the columns that change from shot to shot) and works on that alone; sides are then judged within the chat, and the list is never read as messages. It compares where text and bubble edges sit, not colours, so iOS bubble shading and fixed wallpapers don't disturb it. Shots are first matched using the middle of the screen, which is always chat. Then the chat area is grown outwards over every row that moves with the scroll; the status bar, title and input bar stay put, even when they are translucent. This places every shot on one vertical axis, whether UFADE scrolled up or down. A match is refused if it is ambiguous, or if the screens only look alike (for example repeated automated messages). Where two shots can't be matched, the report shows a visible gap marker instead of guessing; `--diagnose` prints why.
 4. **Finds the bubbles and the sender.** A bubble is a smooth area whose colour differs from the background. Right-hand bubbles are the device owner; left-hand bubbles are the other party; centred items are dates and system notices. Small text just above a left-hand bubble (group chats) is used as the sender's name. The report shows each bubble's colour and a colour legend, and warns if one colour appears on both sides.
 5. **OCRs offline.** Tesseract, or RapidOCR as a fallback. Each bubble that appears in several shots is read once, from a verified shot where it is fully visible. A bubble taller than the screen is read from each part and joined. Apps that print a time inside the bubble (e.g. WhatsApp) get that time split into its own field.
+
+   With `--no-ocr` nothing is read: each message is shown as it appears in its screenshot (see below), and Tesseract isn't needed.
 6. **Writes the HTML.** Every message carries:
    - links to every screenshot it appears in; clicking one opens the shot with the bubble outlined;
    - the file name, SHA-256 and verification result of the shot its text was read from;
@@ -23,7 +25,7 @@ The exit code is `2` when any hash fails or a hash file is orphaned, `3` when no
 ## Install (Windows)
 
 1. Python 3.10 or newer.
-2. Tesseract: install the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki) and tick **German** under *Additional language data*. The tool finds it in `C:\Program Files\Tesseract-OCR` by itself.
+2. Tesseract (not needed with `--no-ocr`): install the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki) and tick **German** under *Additional language data*. The tool finds it in `C:\Program Files\Tesseract-OCR` by itself.
 3. In this folder:
 
 ```bash
@@ -54,6 +56,7 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 |---|---|
 | `--me`, `--them` | Labels for right-hand and left-hand bubbles (default: `Device owner` and the chat folder name) |
 | `--ocr auto\|tesseract\|rapidocr` | OCR engine (default `auto`: Tesseract if installed) |
+| `--no-ocr` | Read no text. Each message, and each date or name line between bubbles, is shown as it appears in its screenshot: the original PNG, linked and displayed through a window around the bubble, so no image is cut out or saved. Order, sender side, merging and hashes work as with OCR. The text is then not searchable, and sender names in group chats and in-bubble times are not split out (they stay visible in the bubble) |
 | `--lang deu+eng` | Tesseract languages (default: `deu+eng` where installed) |
 | `--tesseract PATH` | Path to `tesseract.exe` if it is somewhere unusual |
 | `--top N`, `--bottom N` | Pixels of fixed header/footer to ignore, if detection gets them wrong |
@@ -63,6 +66,7 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 
 ## Limits
 
+- With `--no-ocr` the report shows the screenshots themselves, so it can't be searched or copied as text.
 - OCR text is a reading aid; the screenshot is the evidence. Emoji are not recognised, and `I` sometimes comes out as `|`. Low-confidence messages are highlighted.
 - Photos, stickers and voice messages are not bubbles of flat colour, so they are not listed as messages. They are still visible in the linked screenshots.
 - Alignment prefers a gap over a guess: a pair of shots that only look alike, or that match equally well in two places, is not merged, so a message can then appear twice on either side of the gap marker.

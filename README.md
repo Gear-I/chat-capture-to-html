@@ -64,6 +64,23 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | `--verified-only` | Leave out screenshots whose hash does not verify (they are still listed) |
 | `--diagnose` | Print screen size, the chat area found and how each screenshot was lined up, in numbers only (no message text), so the output can be shared when something looks wrong |
 
+## Use on Linux or macOS
+
+`scripts/run.sh` does the setup for you. It keeps its own Python environment in `.venv` inside this folder, installs the tool there, reinstalls it whenever the code changes, and checks that the version that runs is the one in this folder. Everything after its own options goes to the tool unchanged:
+
+```bash
+scripts/run.sh ~/captures/screenshots -o ~/reports --no-ocr --diagnose
+```
+
+| Option | |
+|---|---|
+| `--update` | `git pull` before running |
+| `--open` | Open the report when done (when `-o` names one `.html` file, or a folder that receives exactly one new report) |
+| `--python PY` | Python to build the environment with (default `python3`, 3.10 or later) |
+| `--no-venv` | Use that Python directly instead of `.venv`; it must already have the dependencies |
+
+It passes on the tool's exit code (`0`, `2` for a hash problem, `3` for no OCR engine), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
+
 ## Limits
 
 - With `--no-ocr` the report shows the screenshots themselves, so it can't be searched or copied as text.

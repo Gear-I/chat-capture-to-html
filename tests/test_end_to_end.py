@@ -77,3 +77,15 @@ def test_diagnose_prints_version_and_numbers_only(tmp_path, capsys):
     assert f"chat-capture-to-html {__version__}" in out.err
     assert "lining up on the middle of the screen" in out.out
     assert "Prüfung" not in out.out + out.err and "Büro" not in out.out + out.err  # no message text
+
+
+@needs_ocr
+def test_manual_chat_pane_overrides_detection(tmp_path, capsys):
+    folder = make_fixture.make(tmp_path, "ipad")
+    res = build_chat(load_capture(folder), ENGINE, left=make_fixture.LIST_W + 20, right=10)
+    assert (res.chat_left, res.chat_right) == (make_fixture.LIST_W + 20, make_fixture.IPAD_W - 10)
+    assert all(s.box[0] >= make_fixture.LIST_W + 20 for m in res.messages for s in m.sources)
+    main([str(tmp_path), "-o", str(tmp_path / "out"), "--diagnose", "--left", str(make_fixture.LIST_W)])
+    out = capsys.readouterr().out
+    assert f"columns {make_fixture.LIST_W}-{make_fixture.IPAD_W}" in out
+    assert "change between shots across the width" in out

@@ -8,8 +8,8 @@ UFADE writes each chat to ``screenshots/<app>/<chat>/`` as pairs of files::
 The ``_n`` suffix is added when several shots fall in the same second.
 
 A capture may instead (or as well) carry a ``<name>.json`` beside each PNG,
-which also names the device. The draft format, agreed with UFADE's author
-as a proposal and not yet final::
+which also names the device. This draft format has been proposed to UFADE's
+author; it is not agreed or final, and may change::
 
     {"schema": "ufade-shot/1", "file": "<name>.png", "sha256": "<64 hex>",
      "captured_utc": "2026-11-12T14:30:05Z",

@@ -150,6 +150,6 @@ Real capture data stays out of the repository (`screenshots/` is git-ignored).
 
 ## License
 
-GNU General Public License v3.0, see [LICENSE](LICENSE).
+GNU General Public License v3.0, see [LICENSE](LICENSE). The packages it uses, and their licences, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Author: Dielle De Noon (@Gear-I), with Claude

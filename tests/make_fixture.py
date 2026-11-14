@@ -209,12 +209,18 @@ def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0):
     return img
 
 
-def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
+DEVICE = {"udid": "00008101-000A1B2C3D4E5F6A", "product_type": "iPad13,18", "os_version": "26.1",
+          "name": "Test iPad"}
+
+
+def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
+         device: dict | None = None, chat: str = "Test Kontakt") -> Path:
+    """Write a synthetic capture. ``sidecar`` is "txt" (as UFADE does today),
+    "json" (the proposed per-screenshot JSON naming the device) or "both"."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
                     else "imessage" if style in ("ios", "ipad") else style)
-    chat = "Test Kontakt"
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     tall, expected, bg = render_chat(render_style)
@@ -240,7 +246,13 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True) -> Path:
         digest = hashlib.sha256(png.read_bytes()).hexdigest()
         if corrupt and i == 1:
             digest = "0" * 64  # one deliberately wrong hash
-        (folder / f"{name}.txt").write_text(digest)
+        if sidecar in ("txt", "both"):
+            (folder / f"{name}.txt").write_text(digest)
+        if sidecar in ("json", "both"):
+            record = {"schema": "ufade-shot/1", "file": png.name, "sha256": digest,
+                      "captured_utc": when.strftime("%Y-%m-%dT%H:%M:%SZ"), "device": device or DEVICE,
+                      "app": app, "chat": chat, "tool": {"name": "UFADE", "version": "test"}}
+            (folder / f"{name}.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
         when += timedelta(seconds=rnd.choice([0, 1, 1, 2]))
     (out / f"expected_{style}.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1), encoding="utf-8")
     return folder

@@ -6,8 +6,8 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 
 ## What it does
 
-1. **Reads the capture.** UFADE stores each chat as `screenshots/<app>/<chat>/<chat>_MM_DD_YYYY_HH_MM_SS[_n].png`, with a `.txt` file next to each PNG holding its SHA-256. You can point the tool at one chat folder, or at `screenshots/` to process every chat in it.
-2. **Checks every hash.** It recomputes the SHA-256 of each PNG and compares it with the `.txt` file. Each shot is marked *verified*, *HASH MISMATCH*, *no hash file* or *hash file unreadable*. It also lists `.txt` files that have no PNG.
+1. **Reads the capture.** UFADE stores each chat as `screenshots/<app>/<chat>/<chat>_MM_DD_YYYY_HH_MM_SS[_n].png`, with a `.txt` file next to each PNG holding its SHA-256. It also reads a `.json` file next to each PNG instead of, or as well as, the `.txt`; this is a format proposed for UFADE that adds the device (see below). You can point the tool at one chat folder, or at `screenshots/` to process every chat in it.
+2. **Checks every hash.** It recomputes the SHA-256 of each PNG and compares it with the `.json` and/or `.txt` file; when both exist, they must agree. Each shot is marked *verified*, *HASH MISMATCH*, *no hash file* or *hash file unreadable*. It also lists hash files that have no PNG.
 3. **Lines up the overlapping shots.** On an iPad, where the conversation list stays beside the chat, it first finds the chat pane (the columns that change from shot to shot) and works on that alone; sides are then judged within the chat, and the list is never read as messages. It compares where text and bubble edges sit, not colours, so iOS bubble shading and fixed wallpapers don't disturb it. Shots are first matched using the middle of the screen, which is always chat. Then the chat area is grown outwards over every row that moves with the scroll; the status bar, title and input bar stay put, even when they are translucent. This places every shot on one vertical axis, whether UFADE scrolled up or down. A match is refused if it is ambiguous, or if the screens only look alike (for example repeated automated messages). Where two shots can't be matched, the report shows a visible gap marker instead of guessing; `--diagnose` prints why.
 4. **Finds the bubbles and the sender.** A bubble is a smooth area whose colour differs from the background. Right-hand bubbles are the device owner; left-hand bubbles are the other party; centred items are dates and system notices. Small text just above a left-hand bubble (group chats) is used as the sender's name. The report shows each bubble's colour and a colour legend, and warns if one colour appears on both sides.
 5. **OCRs offline.** Tesseract, or RapidOCR as a fallback. Each bubble that appears in several shots is read once, from a verified shot where it is fully visible. A bubble taller than the screen is read from each part and joined. Apps that print a time inside the bubble (e.g. WhatsApp) get that time split into its own field.
@@ -20,7 +20,7 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 
    At the end is a table of all screenshots with their computed and recorded hashes. Screenshots are linked, not copied or embedded, so the report never holds an altered copy of the evidence.
 
-The exit code is `2` when any hash fails or a hash file is orphaned, `3` when no OCR engine is available, and `0` otherwise.
+The exit code is `2` when any hash fails, a hash file is orphaned, or a chat folder mixes devices, `3` when no OCR engine is available, and `0` otherwise.
 
 ## Install (Windows)
 
@@ -97,6 +97,33 @@ scripts/run.sh ~/captures/screenshots -o ~/reports --no-ocr --diagnose
 | `--no-venv` | Use that Python directly instead of `.venv`; it must already have the dependencies |
 
 It passes on the tool's exit code (`0`, `2` for a hash problem, `3` for no OCR engine), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
+
+## Device information (`.json` files)
+
+A proposed addition to UFADE's Chat capture: next to each PNG, a `.json` file that holds the hash and also names the device. Only `sha256` is required:
+
+```json
+{
+  "schema": "ufade-shot/1",
+  "file": "Anna_11_12_2026_14_30_05.png",
+  "sha256": "…64 hex…",
+  "captured_utc": "2026-11-12T14:30:05Z",
+  "device": {"udid": "…", "product_type": "iPad13,18", "os_version": "26.1", "name": "…"},
+  "app": "Messages",
+  "chat": "Anna",
+  "tool": {"name": "UFADE", "version": "…"}
+}
+```
+
+When a capture has these files:
+
+- Each report shows the device (name, model, iOS version, UDID). The screenshot table says which file each hash was checked against.
+- A chat folder whose screenshots name different devices, or where some name none, gets a warning, and the exit code is `2`.
+- A `.json` whose `file` names another screenshot, or that isn't valid JSON or holds no hash, is reported as unreadable.
+- The capture time comes from `captured_utc` (UTC), not from the file names (the device's local time, with no time zone).
+- When several chats are processed in one run, `index.html` in the reports folder lists them grouped by device UDID, with links to each report.
+
+The format is a draft and may change when UFADE adopts it. Captures with only `.txt` files work as before.
 
 ## Limits
 

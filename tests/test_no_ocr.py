@@ -58,7 +58,7 @@ def test_same_app_and_chat_name_do_not_overwrite(tmp_path):
     make_fixture.make(tmp_path / "b", "ios")
     cli.main([str(tmp_path), "-o", str(tmp_path / "out"), "--no-ocr", "-q"])
     assert sorted(p.name for p in (tmp_path / "out").glob("*.html")) == \
-        ["Messages_Test Kontakt.html", "Messages_Test Kontakt_2.html"]
+        ["Messages_Test Kontakt.html", "Messages_Test Kontakt_2.html", "index.html"]  # two reports + the overview
 
 
 @pytest.mark.parametrize("strip", [10, 60])

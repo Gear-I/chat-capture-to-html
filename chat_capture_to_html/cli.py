@@ -9,7 +9,7 @@ from . import __version__
 from .capture import HASH_OK, find_capture_folders, load_capture
 from .ocr import OcrError, make_engine
 from .pipeline import build_chat
-from .report import render
+from .report import render, render_index
 
 
 def _safe(name: str) -> str:
@@ -107,13 +107,17 @@ def main(argv: list[str] | None = None) -> int:
 
     worst = 0
     written = []
+    summaries = []
     for folder in folders:
         cap = load_capture(folder)
         bad = [s for s in cap.shots if s.status != HASH_OK]
         say(f"\n{folder}: {len(cap.shots)} screenshots, {len(cap.shots) - len(bad)} hash-verified")
         for s in bad:
             say(f"  ! {s.path.name}: {s.status} — {s.note}")
-        if bad or cap.orphan_hash_files:
+        dev_warns = cap.device_warnings()
+        for w in dev_warns:
+            say(f"  ! {w}")
+        if bad or cap.orphan_hash_files or dev_warns:
             worst = 2
         target = out_file or out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}.html"
         n = 2
@@ -133,4 +137,9 @@ def main(argv: list[str] | None = None) -> int:
         elif len(res.segment_order) > 1:
             say("    run again with --diagnose to see why (prints numbers only, no message text)")
         written.append(target)
+        summaries.append((cap, res, target))
+    if len(summaries) > 1:
+        index = out_dir / "index.html"
+        index.write_text(render_index(summaries, index), encoding="utf-8")
+        say(f"\noverview of {len(summaries)} chats, by device -> {index}")
     return worst

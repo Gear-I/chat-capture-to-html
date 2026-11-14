@@ -119,7 +119,9 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         shot_rows.append(
             f'<tr class="{"" if s.status == HASH_OK else "bad"}"><td>#{i + 1}</td>'
             f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a></td>'
-            f'<td><code>{s.sha256}</code></td><td><code>{s.recorded_sha256 or "—"}</code></td>'
+            f'<td><code>{s.sha256}</code></td><td><code>{s.recorded_sha256 or "—"}</code>'
+            f'<br><small>{" + ".join(x for x, p in ((".json", s.json_path), (".txt", s.txt_path)) if p) or "no hash file"}'
+            f'{(" · " + e(s.device.udid)) if s.device and s.device.udid and len(cap.devices) > 1 else ""}</small></td>'
             f'<td>{STATUS_TEXT[s.status]}{(" — " + e(s.note)) if s.note and s.status != HASH_OK else ""}</td>'
             f'<td>{e(info.skip_reason) if not info.used else e(where) + f"; {info.bubbles} bubbles"}</td></tr>')
     orphans = "".join(f"<li>{e(p.name)}</li>" for p in cap.orphan_hash_files)
@@ -134,14 +136,25 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     if n_ok != len(shots):
         warn_items.insert(0, f"{len(shots) - n_ok} of {len(shots)} screenshots failed hash verification; their messages are marked.")
     if cap.orphan_hash_files:
-        warn_items.append(f"{len(cap.orphan_hash_files)} .txt hash file(s) have no matching PNG.")
+        warn_items.append(f"{len(cap.orphan_hash_files)} hash file(s) (.txt or .json) have no matching PNG.")
+    warn_items += cap.device_warnings()
     if mixed:
         warn_items.append("A bubble colour appears on both sides; check sender attribution against the screenshots.")
     warns = "".join(f"<li>{e(w)}</li>" for w in warn_items)
+    devs = cap.devices
+    devices_html = "".join(
+        f"<dt>Device</dt><dd>{e(d.label())}<br><code>UDID {e(u)}</code></dd>" for u, d in sorted(devs.items())
+    ) if devs else "<dt>Device</dt><dd>not recorded (the capture has no .json files naming it)</dd>"
 
     generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    utc = [s.captured_utc for s in shots if s.captured_utc]
     taken = [s.taken for s in shots if s.taken]
-    span = f"{min(taken):%Y-%m-%d %H:%M:%S} – {max(taken):%Y-%m-%d %H:%M:%S} (from file names)" if taken else "unknown"
+    if shots and len(utc) == len(shots):
+        span = f"{min(utc):%Y-%m-%d %H:%M:%S} – {max(utc):%Y-%m-%d %H:%M:%S} UTC (from the .json files)"
+    elif taken:
+        span = f"{min(taken):%Y-%m-%d %H:%M:%S} – {max(taken):%Y-%m-%d %H:%M:%S} (from file names, device's local time)"
+    else:
+        span = "unknown"
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -189,6 +202,7 @@ tr.bad td{{color:var(--bad)}}
 <dt>Chat (named by examiner)</dt><dd>{e(cap.chat)}</dd>
 {f"<dt>Header text (OCR)</dt><dd>{e(res.header_text)}</dd>" if res.header_text else ""}
 <dt>Capture folder</dt><dd><code>{e(str(cap.folder.resolve()))}</code></dd>
+{devices_html}
 <dt>Screenshots</dt><dd>{len(shots)} ({n_ok} hash-verified)</dd>
 <dt>Captured</dt><dd>{e(span)}</dd>
 <dt>Senders</dt><dd>right-hand bubbles = {e(me)}; left-hand bubbles = {e(them)}</dd>
@@ -204,7 +218,7 @@ tr.bad td{{color:var(--bad)}}
 <h2>Bubble colours</h2><div class="card"><ul>{legend or "<li>none</li>"}</ul></div>
 <h2>Screenshots and hashes</h2>
 <p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE wrote in the .txt file at capture time. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.</p>
-<div class="tw"><table><thead><tr><th></th><th>File</th><th>Computed SHA-256</th><th>Recorded SHA-256</th><th>Check</th><th>Placement</th></tr></thead>
+<div class="tw"><table><thead><tr><th></th><th>File</th><th>Computed SHA-256</th><th>Recorded SHA-256 (from)</th><th>Check</th><th>Placement</th></tr></thead>
 <tbody>{"".join(shot_rows)}</tbody></table></div>
 {f'<h2>Hash files without a screenshot</h2><ul>{orphans}</ul>' if orphans else ""}
 </main>
@@ -222,4 +236,56 @@ show(+a.dataset.shot,a.dataset.box?a.dataset.box.split(',').map(Number):null);}}
 lb.addEventListener('click',ev=>{{if(ev.target===lb||ev.target.tagName==='BUTTON')lb.classList.remove('on');}});
 document.addEventListener('keydown',ev=>{{if(ev.key==='Escape')lb.classList.remove('on');}});
 </script></body></html>
+"""
+
+
+def render_index(items, out_path: Path) -> str:
+    """One page listing every chat processed in a run, grouped by device UDID
+    (from the captures' .json files), with links to each report."""
+    e = html.escape
+    groups: dict[str, list] = {}
+    for cap, res, target in items:
+        devs = cap.devices
+        key = " + ".join(sorted(devs)) if devs else ""
+        groups.setdefault(key, []).append((cap, res, target))
+    sections = []
+    for key in sorted(groups, key=lambda k: (k == "", k)):
+        rows = []
+        for cap, res, target in sorted(groups[key], key=lambda t: (t[0].app, t[0].chat)):
+            n_ok = sum(1 for s in cap.shots if s.status == HASH_OK)
+            gaps = len(res.segment_order) - 1
+            warn = n_ok != len(cap.shots) or cap.orphan_hash_files or cap.device_warnings()
+            rows.append(
+                f'<tr class="{"bad" if warn else ""}"><td>{e(cap.app)}</td>'
+                f'<td><a href="{e(_href(target, out_path.parent))}">{e(cap.chat)}</a></td>'
+                f'<td>{len(cap.shots)}</td><td>{n_ok}</td>'
+                f'<td>{sum(1 for m in res.messages if m.kind == "bubble")}</td><td>{gaps}</td></tr>')
+        if key:
+            first = next(iter(groups[key][0][0].devices.values()))
+            title = f"{e(first.label())} <code>UDID {e(key)}</code>"
+        else:
+            title = "Device not recorded (captures without .json files)"
+        sections.append(f"<h2>{title}</h2><div class=\"tw\"><table><thead><tr><th>App</th><th>Chat</th>"
+                        f"<th>Screenshots</th><th>Verified</th><th>Messages</th><th>Gaps</th></tr></thead>"
+                        f"<tbody>{''.join(rows)}</tbody></table></div>")
+    generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat captures — overview</title>
+{f'<link rel="icon" type="image/svg+xml" href="{FAVICON}">' if FAVICON else ""}
+<style>
+:root{{--bg:#f6f6f4;--fg:#1c1c1e;--mut:#6b6b70;--line:#dcdcdf;--bad:#b42318;--acc:#0a5bd8}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#151517;--fg:#ececee;--mut:#9a9aa0;--line:#333338;--bad:#ff8a80;--acc:#7fb0ff}}}}
+body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}}
+main{{max-width:860px;margin:0 auto;padding:16px}}h1{{font-size:22px}}h2{{font-size:17px;margin:24px 0 8px}}
+a{{color:var(--acc)}}code{{font:12px ui-monospace,Consolas,monospace;word-break:break-all;color:var(--mut)}}
+.tw{{overflow-x:auto}}table{{border-collapse:collapse;width:100%;font-size:14px}}
+td,th{{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}}tr.bad td{{color:var(--bad)}}
+p{{color:var(--mut);font-size:13px}}
+</style></head><body><main>
+<h1>Chat captures — overview</h1>
+<p>{len(items)} chats, grouped by the device each capture names. Red rows have hash or device warnings: open the report for details.
+Generated {e(generated)} by chat-capture-to-html {__version__}.</p>
+{"".join(sections)}
+</main></body></html>
 """

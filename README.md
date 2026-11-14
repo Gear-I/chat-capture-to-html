@@ -25,7 +25,7 @@ The exit code is `2` when any hash fails, a hash file is orphaned, or a chat fol
 ## Install (Windows)
 
 1. Python 3.10 or newer.
-2. Tesseract (not needed with `--no-ocr`): install the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki) and tick **German** under *Additional language data*. The tool finds it in `C:\Program Files\Tesseract-OCR` by itself.
+2. Tesseract (not needed with `--no-ocr`): install the [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/releases/tag/v5.4.0.20240606) and tick **German** under *Additional language data*. The tool finds it in `C:\Program Files\Tesseract-OCR` by itself.
 3. In this folder:
 
 ```bash

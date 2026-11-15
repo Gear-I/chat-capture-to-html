@@ -69,10 +69,16 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style, rounds=1):
+def render_chat(style, rounds=1, pictures=False):
     """Draw the whole chat as one tall image. With rounds > 1 the conversation
-    repeats, each round numbered so no two messages look the same."""
+    repeats, each round numbered so no two messages look the same. With
+    ``pictures`` an animated picture (a GIF) follows the fourth message of each
+    round; its box is in ``tall.info["pictures"]`` (see paint_frames)."""
     convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
+    if pictures:
+        convo = [x for r in range(rounds) for x in
+                 convo[r * len(CONVO):r * len(CONVO) + 4] + [("picture", "")] + convo[r * len(CONVO) + 4:(r + 1) * len(CONVO)]]
+    boxes = []
     wa = style == "whatsapp"
     dark = style.endswith("-dark")
     bg = (239, 234, 226) if wa else (0, 0, 0) if dark else (255, 255, 255)
@@ -97,6 +103,12 @@ def render_chat(style, rounds=1):
             y += 90
             prev = None
             continue
+        if kind == "picture":  # drawn per screenshot by paint_frames; not a message the tool lists
+            y += 34
+            boxes.append((40, y, 40 + int(W * 0.6), y + 560))
+            y += 560
+            prev = None
+            continue
         y += 8 if prev == kind else 34
         lines = wrap(d, text, f, W * 0.62)
         tw = max(d.textlength(l, font=f) for l in lines)
@@ -113,7 +125,34 @@ def render_chat(style, rounds=1):
         expected.append({"side": kind, "text": " ".join(lines), "time": stamp if wa else None})
         y += bh
         prev = kind
-    return tall.crop((0, 0, W, y + 60)), expected, bg
+    tall = tall.crop((0, 0, W, y + 60))
+    tall.info["pictures"] = boxes
+    paint_frames(tall, 0)
+    return tall, expected, bg
+
+
+GIF_COLOURS = [(220, 60, 60), (60, 200, 80), (70, 90, 230), (230, 200, 60), (200, 80, 200), (60, 200, 200)]
+
+
+def paint_frames(tall, frame):
+    """Draw frame ``frame`` of each animated picture: soft colour patches with
+    grain, different in every frame, the way a GIF looks different from one
+    screenshot to the next."""
+    import numpy as np
+    for n, (x0, y0, x1, y1) in enumerate(tall.info.get("pictures", [])):
+        rng = np.random.default_rng(1000 * n + frame)
+        h, w = y1 - y0, x1 - x0
+        yy, xx = np.mgrid[0:h, 0:w] / max(h, w)
+        a = np.zeros((h, w, 3))
+        order = rng.permutation(len(GIF_COLOURS))  # at least four different colours in every frame
+        for k in range(6):
+            cy, cx, r = rng.random(3) * [1, 1, 0.4] + [0, 0, 0.1]
+            a += np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / r ** 2)[..., None] * np.array(GIF_COLOURS[order[k % 4]])
+        a = a / a.max() * 190 + 20 + rng.normal(0, 14, (h, w, 1))  # grain everywhere, nothing flat
+        pic = Image.fromarray(a.clip(0, 255).astype("uint8"))
+        m = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), 40, fill=255)
+        tall.paste(pic, (x0, y0), m)
 
 
 def _ios_screen(tall, top, bg, clock, title, gradient, dark=False):
@@ -265,7 +304,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
                     else "imessage" if style in ("ios", "ipad") else style)
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
-    tall, expected, bg = render_chat(render_style, rounds=2 if style.startswith("ios26") else 1)
+    ios26 = style.startswith("ios26")
+    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
@@ -278,6 +318,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     for i, top in enumerate(tops):
         clock = "9:41" if i < len(tops) // 2 else "9:42"
         sub = rnd.choice([0.25, 0.5, 0.75]) if style.startswith("ipad") and i else 0.0
+        if tall.info.get("pictures"):
+            paint_frames(tall, i)  # the GIF has moved on by the time of each shot
         img = screen(tall, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2)
         stamp = when.strftime("%m_%d_%Y_%H_%M_%S")
         n = n + 1 if stamp == last else 0  # UFADE adds _1, _2, ... within the same second

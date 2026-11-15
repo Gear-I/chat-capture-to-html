@@ -11,7 +11,8 @@ from PIL import Image
 
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
-from .layout import Placement, column_change, content_band, find_chat_pane, moving_strips, place_shots, to_gray
+from .layout import (Placement, blank_pictures, column_change, content_band, find_chat_pane, moving_strips,
+                     picture_boxes, place_shots, to_gray)
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -60,6 +61,7 @@ class ShotInfo:
     skip_reason: str = ""
     placement: Placement | None = None
     bubbles: int = 0
+    pictures: int = 0    # pictures (photos, GIFs) left out when lining shots up
 
 
 @dataclass
@@ -192,6 +194,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         grays = [g[:, xo:x_end] for g in grays]
         W = x_end - xo
     keep = moving_strips(grays)  # leave strips that barely change (a sliver of the list) out of matching
+    # Pictures are left out when lining shots up: a GIF shows a different frame
+    # in every screenshot. Only these working copies are marked; where either
+    # of two shots has a picture, that spot is not compared.
+    for k, i in enumerate(idx):
+        boxes = picture_boxes(images[i], background_color(images[i]))
+        infos[i].pictures = len(boxes)
+        grays[k] = blank_pictures(grays[k], boxes)
     middle: list[Placement] = []
     if top is None or bottom is None:
         t_auto, b_auto, middle = content_band(grays, keep)

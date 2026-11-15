@@ -24,6 +24,7 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
     res = build_chat(cap, None)
     assert not res.text_read and not res.warnings
     assert [m.side for m in res.messages] == [e["side"] for e in expected]
+    assert not any(m.doubt for m in res.messages)  # every real message is in every shot that shows it
     for m in res.messages:
         assert not m.lines and m.views
         for v in m.views:
@@ -66,6 +67,24 @@ def test_ipad_subpixel_redraws_still_join(tmp_path, style, seed):
     folder = make_fixture.make(tmp_path, style, seed=seed)
     res = build_chat(load_capture(folder), None)
     assert len(res.segment_order) == 1 and not res.warnings
+
+
+@pytest.mark.parametrize("style", ["imessage", "whatsapp", "ios-dark"])
+@pytest.mark.parametrize("seed", [1, 2])
+def test_something_in_one_shot_only_is_marked_not_hidden(tmp_path, style, seed):
+    """A bubble-like patch that one screenshot shows and another screenshot of
+    the same spot does not (a frame of an animated sticker, a typing
+    indicator) stays in the report, marked as maybe not a message."""
+    folder = make_fixture.make(tmp_path, style, seed=seed, ghost=True)
+    expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
+    res = build_chat(load_capture(folder), None)
+    flagged = [m for m in res.messages if m.doubt]
+    assert len(flagged) == 1 and "seen in 1 of" in flagged[0].doubt
+    assert [m.side for m in res.messages if not m.doubt] == [e["side"] for e in expected]
+    out = tmp_path / "r.html"
+    assert cli.main([str(folder), "-o", str(out), "--no-ocr", "-q"]) == 2  # one bad hash in the fixture
+    html = out.read_text(encoding="utf-8")
+    assert html.count('class="foot doubtnote"') == 1 and "may not be messages" in html
 
 
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):

@@ -101,13 +101,15 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             named = ", name read from screenshot" if m.sender_name else ""
             side_note = f' <span class="side">({m.side}{named})</span>'
         rows.append(
-            f'<div class="msg {m.side}{" warn" if bad else ""}" id="m{n}">'
+            f'<div class="msg {m.side}{" warn" if bad else ""}{" doubt" if m.doubt else ""}" id="m{n}">'
             f'<div class="who">{swatch}{e(who)}{side_note}</div>'
             f'<div class="bubble{"" if m.lines else " image"}" style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
             f'<div class="foot"><a class="n" href="#m{n}">#{n}</a>'
             f'{f" · {e(m.time)}" if m.time else ""}<span class="conf{lowc}">{conf}</span> · '
             f'screenshots {src_links}</div>'
-            f'<div class="foot">{hash_line}</div></div>')
+            f'<div class="foot">{hash_line}</div>'
+            + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
+            + '</div>')
 
     n_ok = sum(1 for s in shots if s.status == HASH_OK)
     shot_rows = []
@@ -140,6 +142,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     if cap.orphan_hash_files:
         warn_items.append(f"{len(cap.orphan_hash_files)} hash file(s) (.txt or .json) have no matching PNG.")
     warn_items += cap.device_warnings()
+    n_doubt = sum(1 for m in res.messages if getattr(m, "doubt", ""))
+    if n_doubt:
+        warn_items.append(f"{n_doubt} message(s) were found in fewer screenshots than show their place in the chat; "
+                          "they may not be messages (for example parts of an animated picture) and are marked.")
     if mixed:
         warn_items.append("A bubble colour appears on both sides; check sender attribution against the screenshots.")
     warns = "".join(f"<li>{e(w)}</li>" for w in warn_items)
@@ -183,7 +189,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}}dt
 .meta .view{{margin:0 auto}}
 .foot{{font-size:12px;color:var(--mut);overflow-wrap:anywhere}}.right .foot{{text-align:right}}
 .hash{{font-size:11px}}.hash code{{font-size:11px}}.bad,.bad a,.hash.bad{{color:var(--bad);font-weight:600}}
-.warn .bubble{{outline:2px solid var(--bad)}}
+.warn .bubble{{outline:2px solid var(--bad)}}.doubt .bubble{{outline:2px dashed var(--bad)}}.doubtnote{{color:var(--bad)}}
 .meta{{align-self:center;text-align:center;font-size:13px;color:var(--mut);max-width:90%}}.meta .refs{{margin-left:6px;font-size:11px}}
 .gap{{align-self:stretch;text-align:center;font-size:13px;color:var(--bad);border-top:2px dashed var(--bad);padding-top:6px}}
 .sw{{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-2px;margin-right:4px}}

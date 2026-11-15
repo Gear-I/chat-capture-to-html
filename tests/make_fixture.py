@@ -69,16 +69,19 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style, rounds=1, pictures=False):
+def render_chat(style, rounds=1, pictures=False, ghost=False):
     """Draw the whole chat as one tall image. With rounds > 1 the conversation
     repeats, each round numbered so no two messages look the same. With
     ``pictures`` an animated picture (a GIF) follows the fourth message of each
     round; its box is in ``tall.info["pictures"]`` (see paint_frames)."""
     convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
+    if ghost:  # an empty stretch where something shows up in one screenshot only (see make)
+        convo = convo[:7] + [("space", "")] + convo[7:]
     if pictures:
         convo = [x for r in range(rounds) for x in
                  convo[r * len(CONVO):r * len(CONVO) + 4] + [("picture", "")] + convo[r * len(CONVO) + 4:(r + 1) * len(CONVO)]]
     boxes = []
+    ghost_box = None
     wa = style == "whatsapp"
     dark = style.endswith("-dark")
     bg = (239, 234, 226) if wa else (0, 0, 0) if dark else (255, 255, 255)
@@ -101,6 +104,12 @@ def render_chat(style, rounds=1, pictures=False):
             d.text(((W - tw) / 2, y), text, font=fs, fill=meta_fg)
             expected.append({"side": "center", "text": text})
             y += 90
+            prev = None
+            continue
+        if kind == "space":
+            y += 34
+            ghost_box = (40, y + 40, 40 + int(W * 0.45), y + 160)
+            y += 240
             prev = None
             continue
         if kind == "picture":  # drawn per screenshot by paint_frames; not a message the tool lists
@@ -127,6 +136,8 @@ def render_chat(style, rounds=1, pictures=False):
         prev = kind
     tall = tall.crop((0, 0, W, y + 60))
     tall.info["pictures"] = boxes
+    if ghost:
+        tall.info["ghost"] = ghost_box
     paint_frames(tall, 0)
     return tall, expected, bg
 
@@ -325,7 +336,7 @@ DEVICE = {"udid": "00008101-000A1B2C3D4E5F6A", "product_type": "iPad13,18", "os_
 
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
-         device: dict | None = None, chat: str = "Test Kontakt") -> Path:
+         device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False) -> Path:
     """Write a synthetic capture. ``sidecar`` is "txt" (as UFADE does today),
     "json" (the proposed per-screenshot JSON naming the device) or "both"."""
     rnd = random.Random(seed)
@@ -335,7 +346,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     ios26 = style.startswith("ios26")
-    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26)
+    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
@@ -343,6 +354,15 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
         if t <= 0:
             break
         t -= rnd.randint(int(ch * 0.3), int(ch * 0.55))
+    # ``ghost``: a bubble-like patch in one screenshot only, in a stretch of the
+    # chat that another screenshot shows too (like a frame of an animated
+    # sticker, or a typing indicator). It is not in expected.json.
+    ghost_shot = None
+    if ghost:
+        gx0, gy0, gx1, gy1 = tall.info["ghost"]
+        showing = [i for i, top in enumerate(tops) if top + 20 <= gy0 and gy1 + 20 <= top + ch]
+        assert len(showing) >= 2, "the ghost's stretch must be in at least two screenshots"
+        ghost_shot = showing[0]
     when = datetime(2026, 11, 12, 14, 30, 5)
     last, n = None, 0
     for i, top in enumerate(tops):
@@ -351,7 +371,11 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
         if tall.info.get("pictures"):
             paint_frames(tall, i)  # the GIF has moved on by the time of each shot
         spring = (rnd.uniform(2, 4.5), rnd.uniform(0, 6.28)) if ios26 and i else None  # up to 9 px apart; 8 seen on a real capture
-        img = screen(tall, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2, spring=spring)
+        src = tall
+        if i == ghost_shot:
+            src = tall.copy()
+            ImageDraw.Draw(src).rounded_rectangle(tall.info["ghost"], 48, fill=(120, 120, 128))
+        img = screen(src, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2, spring=spring)
         stamp = when.strftime("%m_%d_%Y_%H_%M_%S")
         n = n + 1 if stamp == last else 0  # UFADE adds _1, _2, ... within the same second
         name = f"{chat}_{stamp}" + (f"_{n}" if n else "")

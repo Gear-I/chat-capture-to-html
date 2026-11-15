@@ -206,18 +206,26 @@ def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     differs, even when the average difference is small.
 
     iOS often stops scrolling between two pixels and redraws text slightly
-    shifted, so a row only counts as disagreeing when it differs from the
-    other shot's row and from both of its neighbours."""
+    shifted, and each part of a line may land on a different pixel row. So a
+    column strip only counts as differing when it differs from the other
+    shot's row and from both of its neighbours, and a row disagrees when at
+    least one strip does."""
     a, b = _overlap(sa, sb, d)
     ink = _ink_rows(a, b)
     if not ink.any():
         return 1.0
-    strong = np.ones(a.shape[0], bool)
+    return float(_strong_cells(a, b).any(axis=1)[ink].mean())
+
+
+def _strong_cells(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Cells (row, column strip) that clearly differ between ``a`` and ``b``
+    at the same row and at the rows just above and below in ``b``."""
+    strong = np.ones(a.shape, bool)
     for o in (-1, 0, 1):
         bb = np.roll(b, o, axis=0)
         tot = a + bb
-        strong &= ((np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)).any(axis=1)
-    return float(strong[ink].mean())
+        strong &= (np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)
+    return strong
 
 
 def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
@@ -227,11 +235,7 @@ def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
     eighth of its width from left to right. Numbers only."""
     a, b = _overlap(sa, sb, d)
     h = sb.shape[0]
-    strong = np.ones(a.shape, bool)
-    for o in (-1, 0, 1):
-        bb = np.roll(b, o, axis=0)
-        tot = a + bb
-        strong &= (np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)
+    strong = _strong_cells(a, b)
     ink = _ink_rows(a, b)
     rows = np.arange(max(0, -d), max(0, -d) + a.shape[0])  # these rows of the later shot
     strong_rows = strong.any(axis=1)
@@ -369,11 +373,12 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
             # same test as _disagreement): a control floating over the chat, or
             # chat that iOS blurs as it slides under the title bar, can cover only
             # part of a row whose other strips do move with the chat.
-            strong = np.ones(len(rows), bool)
+            strong = np.ones(a.shape, bool)
             for o in (-1, 0, 1):
                 ao, bo = _pair(a, y[np.clip(rows + off + o, 0, h - 1)])
                 t = ao + bo
-                strong &= ((np.abs(ao - bo) > 0.6 * t) & (t > 2.0)).any(axis=1)
+                strong &= (np.abs(ao - bo) > 0.6 * t) & (t > 2.0)
+            strong = strong.any(axis=1)
             for r, e, s, tt in zip(rows, err, strong, tot):
                 if tt > 0.5 * a.shape[1]:
                     errs[r].append(1.0 if s else float(e))

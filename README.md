@@ -148,6 +148,29 @@ py -m pytest
 
 Real capture data stays out of the repository (`screenshots/` is git-ignored).
 
+## Checking a corpus of real captures
+
+The tests show the logic works on synthetic captures. To see what a change does on real captures, keep them together in a folder outside the repository (a *corpus*), and run `scripts/corpus_check.py` over it. Each capture is processed without OCR and summed up in numbers: shots, hash problems, runs of joined shots, gaps, messages, lines between them, pictures left out, the chat area, and where each shot was placed.
+
+```bash
+py scripts\corpus_check.py C:\ufade-test --save C:\ufade-reports\corpus-0.5.0.json
+```
+
+Later, after installing another version, compare with that run:
+
+```bash
+py scripts\corpus_check.py C:\ufade-test --baseline C:\ufade-reports\corpus-0.5.0.json
+```
+
+Every change is listed per capture, for example `runs 2 -> 1; gaps 1 -> 0`. Whether a change is an improvement is for you to judge from the screenshots.
+
+What you have confirmed by looking at the screenshots can be written down and checked on every run with `--expected FILE`, a JSON file such as `{"3f9a0c1d2e4b": {"runs": 1, "messages": 53}}`. Any field from the results can be used.
+
+- The capture folders are only read. `--save` refuses a file inside one.
+- Captures are named by an ID made from their screenshots' SHA-256 values, never by chat or file names, so the output can be shared. `--show-paths` adds the folders, for your own use.
+- The script uses only the tool's basic functions, so it also runs with older installed versions. To compare two versions, copy the script out of the repository first, then install each version and run the copy.
+- The exit code is `1` when anything differs from the baseline or the expected values, and `0` otherwise.
+
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE). The packages it uses, and their licences, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -127,3 +127,59 @@ def test_picture_boxes_find_pictures_and_never_bubbles(style):
     assert len(found) == len(truth)
     for (x0, y0, x1, y1), (tx0, ty0, tx1, ty1) in zip(sorted(found, key=lambda b: b[1]), truth):
         assert abs(x0 - tx0) <= 16 and abs(y0 - ty0) <= 16 and abs(x1 - tx1) <= 16 and abs(y1 - ty1) <= 16
+
+
+def _with_pill(tall, bg, tops, pill):
+    from PIL import ImageDraw
+    out = []
+    for t in tops:
+        im = mf.screen(tall, t, bg, "9:41", "Test", "ios")
+        if pill:
+            d = ImageDraw.Draw(im)
+            d.rounded_rectangle((mf.W / 2 - 170, PILL[0], mf.W / 2 + 170, PILL[1]), 30, fill=(238, 238, 240),
+                                outline=(200, 200, 205), width=2)
+            d.text((mf.W / 2 - 120, PILL[0] + 8), "2 People >", font=mf.font(44), fill=(0, 0, 0))
+        out.append(to_gray(np.asarray(im).astype(np.float32)))
+    return out
+
+
+PILL = (mf.HEADER + 10, mf.HEADER + 70)
+
+
+@pytest.mark.parametrize("start", [mf.HEADER, PILL[0], PILL[0] + 20])
+def test_trim_unsteady_edges_cuts_a_name_pill_floating_over_the_chat(start):
+    """iOS 26 floats the contact's name over the top of the chat. When the chat
+    area was found to start inside it, rows that disagree in most pairs of
+    shots are cut, so the chat area starts below the pill."""
+    from chat_capture_to_html.layout import trim_unsteady_edges
+    tall, _, bg = mf.render_chat("imessage", rounds=3)
+    bottom = tall.height - CH
+    tops = [bottom, bottom - 701, bottom - 701 - 913, bottom - 701 - 913 - 1003]
+    grays = _with_pill(tall, bg, tops, pill=True)
+    _, bot, _ = content_band(grays)
+    top, new_bot = trim_unsteady_edges(grays, start, bot)
+    assert PILL[1] - 4 <= top <= PILL[1] + 10 and new_bot == bot
+    # the same shots without the pill: nothing to cut
+    plain = _with_pill(tall, bg, tops, pill=False)
+    t2, b2, _ = content_band(plain)
+    assert trim_unsteady_edges(plain, t2, b2) == (t2, b2)
+
+
+@pytest.mark.parametrize("spring", [3, 6, 9])
+def test_a_bubble_that_sprang_a_few_pixels_still_matches(spring):
+    """A screenshot can catch a bubble before it settles after a scroll. A
+    block moved a few pixels on its own still matches, and the match says how
+    far it had to move."""
+    from chat_capture_to_html.layout import _place, row_signature
+    tall, _, bg = mf.render_chat("imessage", rounds=3)
+    bottom = tall.height - CH
+    g0, g1 = (to_gray(np.asarray(mf.screen(tall, t, bg, "9:41", "Test", "imessage")).astype(np.float32))
+              for t in (bottom, bottom - 900))
+    g1 = g1.copy()
+    band = slice(mf.HEADER, mf.H - mf.FOOTER)
+    # move one block of rows (a bubble's worth) in the second shot down by `spring` px
+    y0, y1 = mf.HEADER + 1200, mf.HEADER + 1400
+    g1[y0 + spring:y1 + spring] = g1[y0:y1].copy()
+    places = _place([row_signature(g[band]) for g in (g0, g1)], 0.3)
+    assert places[1].matched_with == 0 and places[1].y == -900
+    assert 0 < places[1].moved <= spring + 1

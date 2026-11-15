@@ -42,8 +42,9 @@ def test_ios26_floating_title_and_blur_do_not_break_the_joins(tmp_path, seed):
     """iOS 26 draws the contact's name pill over the chat and blurs the chat as
     it slides under the title. Those rows are not chat that can be compared, so
     they stay out of the chat area. The capture also holds an animated picture
-    that shows a different frame in every shot; pictures are not compared. Every
-    overlapping pair of shots joins."""
+    that shows a different frame in every shot (pictures are not compared), and
+    bubbles caught a few pixels from where they settle. Every overlapping pair
+    of shots joins."""
     folder = make_fixture.make(tmp_path, "ios26-dark", seed=seed)
     res = build_chat(load_capture(folder), None)
     assert len(res.segment_order) == 1 and not res.warnings

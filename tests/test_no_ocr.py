@@ -37,6 +37,36 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
     assert res.messages[-1].views[0].complete
 
 
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
+def test_ios26_floating_title_and_blur_do_not_break_the_joins(tmp_path, seed):
+    """iOS 26 draws the contact's name pill over the chat and blurs the chat as
+    it slides under the title. Those rows are not chat that can be compared, so
+    they stay out of the chat area. The capture also holds an animated picture
+    that shows a different frame in every shot; pictures are not compared. Every
+    overlapping pair of shots joins."""
+    folder = make_fixture.make(tmp_path, "ios26-dark", seed=seed)
+    res = build_chat(load_capture(folder), None)
+    assert len(res.segment_order) == 1 and not res.warnings
+    assert res.content_top >= make_fixture.PILL_BOTTOM
+    assert any(info.pictures for info in res.shots)
+    expected = json.loads((tmp_path / "expected_ios26-dark.json").read_text(encoding="utf-8"))
+    bubbles = [m for m in res.messages if m.kind == "bubble"]
+    assert [m.side for m in bubbles] == [e["side"] for e in expected if e["side"] != "center"]
+    for m in res.messages:
+        assert m.views and all(v.shot in m.text_from for v in m.views)
+
+
+@pytest.mark.parametrize("style", ["ipad", "ipad-dark"])
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
+def test_ipad_subpixel_redraws_still_join(tmp_path, style, seed):
+    """The iPad redraws the chat between two pixels, so parts of a line land on
+    different pixel rows. That alone must not make overlapping shots look like
+    different screens."""
+    folder = make_fixture.make(tmp_path, style, seed=seed)
+    res = build_chat(load_capture(folder), None)
+    assert len(res.segment_order) == 1 and not res.warnings
+
+
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):
     def no_engine(*a, **k):
         raise AssertionError("--no-ocr must not load an OCR engine")

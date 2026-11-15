@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 SIG_BINS = 64
@@ -76,6 +77,66 @@ def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]
     return top, bottom
 
 
+def picture_boxes(img: np.ndarray, bg: tuple[int, int, int], block: int = 8) -> list[tuple[int, int, int, int]]:
+    """Boxes (x0, y0, x1, y1) of pictures in a screenshot: photos, GIFs, videos.
+
+    A message bubble is a smooth fill with text on it: most of its pixels equal
+    their neighbours, and most of it is one colour (iOS shading changes it only
+    slowly). A photo or GIF has grain or detail almost everywhere and many
+    colours. An animated GIF shows a different frame in every screenshot, so
+    pictures must not be compared when lining shots up."""
+    h, w, _ = img.shape
+    hb, wb = h // block, w // block
+    if hb < 4 or wb < 4:
+        return []
+    im = img[:hb * block, :wb * block].astype(np.int16)
+    blocks = im.astype(np.float32).reshape(hb, block, wb, block, 3)
+    mean = blocks.mean(axis=(1, 3))
+    std = blocks.std(axis=(1, 3)).mean(axis=2)
+    off_bg = (np.abs(mean - np.array(bg, np.float32)).sum(axis=2) > 30) | (std > 20)
+    # per block: pixels off the background, and how many of them are smooth
+    smooth = np.zeros(im.shape[:2], bool)
+    smooth[:-1, :-1] = ((np.abs(im[:-1, 1:] - im[:-1, :-1]).max(axis=2) <= 4)
+                        & (np.abs(im[1:, :-1] - im[:-1, :-1]).max(axis=2) <= 4))
+    ink = np.abs(im - np.array(bg, np.int16)).sum(axis=2) > 30
+    n_ink = ink.reshape(hb, block, wb, block).sum(axis=(1, 3))
+    n_smooth = (ink & smooth).reshape(hb, block, wb, block).sum(axis=(1, 3))
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(off_bg.astype(np.uint8), connectivity=8)
+    out = []
+    for i in range(1, n):
+        x, y, bw, bh, area = stats[i]
+        if bw < wb * 0.3 or bh < hb * 0.05 or area < 0.5 * bw * bh:
+            continue
+        sel = labels == i
+        cols = mean[sel]
+        same = (np.abs(cols - np.median(cols, axis=0)).max(axis=1) <= 24).mean()  # blocks in the main colour
+        smooth_share = n_smooth[sel].sum() / max(1, n_ink[sel].sum())
+        if smooth_share < 0.6 and same < 0.75:
+            out.append((int(x * block), int(y * block), int(min(w, (x + bw) * block)), int(min(h, (y + bh) * block))))
+    return out
+
+
+def blank_pictures(gray: np.ndarray, boxes) -> np.ndarray:
+    """A copy of ``gray`` with each picture box marked as not to be compared
+    (NaN). Row signatures carry the mark, and wherever either of two shots is
+    marked, neither is compared there (see _pair). Used for lining shots up
+    only; the report always shows the original screenshots."""
+    if not boxes:
+        return gray
+    g = gray.astype(np.float32, copy=True)
+    for x0, y0, x1, y1 in boxes:
+        g[y0:y1, x0:x1] = np.nan
+    return g
+
+
+def _pair(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``a`` and ``b`` with every cell that is a picture in either set to 0."""
+    m = np.isnan(a) | np.isnan(b)
+    if not m.any():
+        return a, b
+    return np.where(m, 0.0, a), np.where(m, 0.0, b)
+
+
 def row_signature(band: np.ndarray, keep: np.ndarray | None = None) -> np.ndarray:
     """Per row, how much horizontal detail (text strokes, bubble edges) each of
     SIG_BINS column strips holds. Flat areas score zero whatever their colour,
@@ -115,7 +176,7 @@ def _overlap(sa: np.ndarray, sb: np.ndarray, d: int) -> tuple[np.ndarray, np.nda
     h = sa.shape[0]
     a0, a1 = max(0, d), min(h, h + d)
     # row r of B shows the same content as row r + d of A
-    return sa[a0:a1], sb[a0 - d:a1 - d]
+    return _pair(sa[a0:a1], sb[a0 - d:a1 - d])
 
 
 def _ink_rows(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -145,18 +206,26 @@ def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     differs, even when the average difference is small.
 
     iOS often stops scrolling between two pixels and redraws text slightly
-    shifted, so a row only counts as disagreeing when it differs from the
-    other shot's row and from both of its neighbours."""
+    shifted, and each part of a line may land on a different pixel row. So a
+    column strip only counts as differing when it differs from the other
+    shot's row and from both of its neighbours, and a row disagrees when at
+    least one strip does."""
     a, b = _overlap(sa, sb, d)
     ink = _ink_rows(a, b)
     if not ink.any():
         return 1.0
-    strong = np.ones(a.shape[0], bool)
+    return float(_strong_cells(a, b).any(axis=1)[ink].mean())
+
+
+def _strong_cells(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Cells (row, column strip) that clearly differ between ``a`` and ``b``
+    at the same row and at the rows just above and below in ``b``."""
+    strong = np.ones(a.shape, bool)
     for o in (-1, 0, 1):
         bb = np.roll(b, o, axis=0)
         tot = a + bb
-        strong &= ((np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)).any(axis=1)
-    return float(strong[ink].mean())
+        strong &= (np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)
+    return strong
 
 
 def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
@@ -166,11 +235,7 @@ def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
     eighth of its width from left to right. Numbers only."""
     a, b = _overlap(sa, sb, d)
     h = sb.shape[0]
-    strong = np.ones(a.shape, bool)
-    for o in (-1, 0, 1):
-        bb = np.roll(b, o, axis=0)
-        tot = a + bb
-        strong &= (np.abs(a - bb) > 0.6 * tot) & (tot > 2.0)
+    strong = _strong_cells(a, b)
     ink = _ink_rows(a, b)
     rows = np.arange(max(0, -d), max(0, -d) + a.shape[0])  # these rows of the later shot
     strong_rows = strong.any(axis=1)
@@ -298,11 +363,25 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
         # row r of B shows row r + d of A. Only compare against rows from the
         # middle of the other shot, which are known to be chat.
         for x, y, off in ((sigs[i], sigs[pl.matched_with], d), (sigs[pl.matched_with], sigs[i], -d)):
-            for r in range(max(0, c0 - off), min(h, c1 - off)):
-                a, b = x[r], y[r + off]
-                tot = a.sum() + b.sum()
-                if tot > 0.5 * a.shape[0]:
-                    errs[r].append(float(np.abs(a - b).sum() / tot))
+            rows = np.arange(max(0, c0 - off), min(h, c1 - off))
+            if not len(rows):
+                continue
+            a, b = _pair(x[rows], y[rows + off])
+            tot = a.sum(axis=1) + b.sum(axis=1)
+            err = np.abs(a - b).sum(axis=1) / np.maximum(tot, 1e-9)
+            # A row also fails when any single column strip clearly differs (the
+            # same test as _disagreement): a control floating over the chat, or
+            # chat that iOS blurs as it slides under the title bar, can cover only
+            # part of a row whose other strips do move with the chat.
+            strong = np.ones(a.shape, bool)
+            for o in (-1, 0, 1):
+                ao, bo = _pair(a, y[np.clip(rows + off + o, 0, h - 1)])
+                t = ao + bo
+                strong &= (np.abs(ao - bo) > 0.6 * t) & (t > 2.0)
+            strong = strong.any(axis=1)
+            for r, e, s, tt in zip(rows, err, strong, tot):
+                if tt > 0.5 * a.shape[1]:
+                    errs[r].append(1.0 if s else float(e))
     if not any(errs):
         return None, places, []
 

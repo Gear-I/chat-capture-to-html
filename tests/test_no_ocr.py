@@ -16,7 +16,7 @@ from chat_capture_to_html.capture import load_capture  # noqa: E402
 from chat_capture_to_html.pipeline import build_chat  # noqa: E402
 
 
-@pytest.mark.parametrize("style", ["imessage", "ios", "ios-dark", "ipad", "ipad-dark", "whatsapp"])
+@pytest.mark.parametrize("style", ["imessage", "ios", "ios-dark", "ios26-dark", "ipad", "ipad-dark", "whatsapp"])
 def test_order_sides_and_views_without_ocr(tmp_path, style):
     folder = make_fixture.make(tmp_path, style)
     expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
@@ -35,6 +35,19 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
         assert all(v.box[0] >= make_fixture.LIST_W for m in res.messages for v in m.views)
     # the newest message is shown whole, not cut at the input bar
     assert res.messages[-1].views[0].complete
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4])
+def test_ios26_floating_title_and_blur_do_not_break_the_joins(tmp_path, seed):
+    """iOS 26 draws the contact's name pill over the chat and blurs the chat as
+    it slides under the title. Those rows are not chat that can be compared, so
+    they stay out of the chat area, and every overlapping pair of shots joins."""
+    folder = make_fixture.make(tmp_path, "ios26-dark", seed=seed)
+    res = build_chat(load_capture(folder), None)
+    assert len(res.segment_order) == 1 and not res.warnings
+    assert res.content_top >= make_fixture.PILL_BOTTOM
+    expected = json.loads((tmp_path / "expected_ios26-dark.json").read_text(encoding="utf-8"))
+    assert [m.side for m in res.messages] == [e["side"] for e in expected]
 
 
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):

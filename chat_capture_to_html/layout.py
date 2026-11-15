@@ -298,11 +298,24 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
         # row r of B shows row r + d of A. Only compare against rows from the
         # middle of the other shot, which are known to be chat.
         for x, y, off in ((sigs[i], sigs[pl.matched_with], d), (sigs[pl.matched_with], sigs[i], -d)):
-            for r in range(max(0, c0 - off), min(h, c1 - off)):
-                a, b = x[r], y[r + off]
-                tot = a.sum() + b.sum()
-                if tot > 0.5 * a.shape[0]:
-                    errs[r].append(float(np.abs(a - b).sum() / tot))
+            rows = np.arange(max(0, c0 - off), min(h, c1 - off))
+            if not len(rows):
+                continue
+            a, b = x[rows], y[rows + off]
+            tot = a.sum(axis=1) + b.sum(axis=1)
+            err = np.abs(a - b).sum(axis=1) / np.maximum(tot, 1e-9)
+            # A row also fails when any single column strip clearly differs (the
+            # same test as _disagreement): a control floating over the chat, or
+            # chat that iOS blurs as it slides under the title bar, can cover only
+            # part of a row whose other strips do move with the chat.
+            strong = np.ones(len(rows), bool)
+            for o in (-1, 0, 1):
+                bo = y[np.clip(rows + off + o, 0, h - 1)]
+                t = a + bo
+                strong &= ((np.abs(a - bo) > 0.6 * t) & (t > 2.0)).any(axis=1)
+            for r, e, s, tt in zip(rows, err, strong, tot):
+                if tt > 0.5 * a.shape[1]:
+                    errs[r].append(1.0 if s else float(e))
     if not any(errs):
         return None, places, []
 

@@ -1,11 +1,13 @@
 """Build a synthetic UFADE Chat capture folder (no real messages) for tests.
 
-    python tests/make_fixture.py OUT_DIR [--style imessage|ios|ipad|whatsapp|both]
+    python tests/make_fixture.py OUT_DIR [--style imessage|ios|ios26-dark|ipad|whatsapp|both]
 
 ``ios`` is iMessage drawn the way iOS really composites it: the chat scrolls
 under translucent blurred bars and blue bubbles are shaded by screen position.
 ``ipad`` is the same chat on an iPad, beside the conversation list.
 ``ios-dark`` and ``ipad-dark`` are the same in dark mode.
+``ios26-dark`` is iOS 26 in dark mode: no solid bars, the chat blurs as it slides
+under the title, and the contact's name floats over it in a pill.
 
 Writes ``OUT_DIR/screenshots/<App>/<chat>/`` with overlapping screenshots taken
 while "scrolling up" from the newest message, a ``.txt`` SHA-256 next to each PNG
@@ -143,6 +145,44 @@ def _ios_screen(tall, top, bg, clock, title, gradient, dark=False):
     return img
 
 
+def _ios26_screen(tall, top, bg, clock, title, dark=True):
+    """iOS 26 Messages: no solid bars. The chat runs to both edges of the
+    screen; near the top and bottom it fades into a soft blur, and floating
+    controls (back button, contact picture and name pill, input field) are
+    drawn over it in fixed places, partly over chat that is still readable."""
+    import numpy as np
+    img = Image.new("RGB", (W, H), bg)
+    src_top = top - HEADER
+    win = tall.crop((0, max(src_top, 0), W, min(src_top + H, tall.height)))
+    img.paste(win, (0, max(-src_top, 0)))
+    sharp = np.asarray(img).astype(np.float32)
+    soft = np.asarray(img.filter(ImageFilter.GaussianBlur(14))).astype(np.float32) * 0.55
+    ramp = np.zeros(H, np.float32)  # 1 = fully blurred, 0 = untouched
+    ramp[:TOP_FADE] = np.linspace(1, 0, TOP_FADE) ** 1.5
+    ramp[H - BOTTOM_FADE:] = np.linspace(0, 1, BOTTOM_FADE) ** 1.5
+    a = sharp * (1 - ramp[:, None, None]) + soft * ramp[:, None, None]
+    img = Image.fromarray(a.clip(0, 255).astype("uint8"))
+    d = ImageDraw.Draw(img)
+    ink = (255, 255, 255) if dark else (0, 0, 0)
+    glass = (44, 44, 48) if dark else (238, 238, 240)
+    d.text((110, 45), clock, font=font(48), fill=ink)
+    d.ellipse((40, 115, 140, 215), fill=glass)  # back
+    d.ellipse((W - 140, 115, W - 40, 215), fill=glass)  # video call
+    d.ellipse((W / 2 - 60, 115, W / 2 + 60, 235), fill=(70, 50, 120))  # contact picture
+    tw = d.textlength(title, font=font(44))
+    d.rounded_rectangle((W / 2 - tw / 2 - 40, PILL_TOP, W / 2 + tw / 2 + 40, PILL_BOTTOM), 40,
+                        fill=glass, outline=(70, 70, 76) if dark else (215, 215, 220), width=2)
+    d.text((W / 2 - tw / 2, PILL_TOP + 12), title, font=font(44), fill=ink)
+    d.ellipse((50, H - 170, 150, H - 70), fill=glass)  # plus
+    d.rounded_rectangle((180, H - 170, W - 60, H - 70), 50, fill=glass)  # input field
+    return img
+
+
+# iOS 26 layout (see _ios26_screen): where the blur fades out, and the name pill,
+# whose lower edge reaches just past the end of the blur
+TOP_FADE, BOTTOM_FADE = 420, 300
+PILL_TOP, PILL_BOTTOM = 250, 345
+
 IPAD_W, IPAD_H, LIST_W = 1640, 2360, 470
 
 
@@ -182,6 +222,8 @@ def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0):
     dark = style.endswith("-dark")
     if style.startswith("ipad"):
         return _ipad_screen(tall, top, bg, clock, title, subpixel, list_tint, dark)
+    if style.startswith("ios26"):
+        return _ios26_screen(tall, top, bg, clock, title, dark)
     if style.startswith("ios"):
         return _ios_screen(tall, top, bg, clock, title, gradient=True, dark=dark)
     img = Image.new("RGB", (W, H), bg)
@@ -223,7 +265,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
                     else "imessage" if style in ("ios", "ipad") else style)
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
-    tall, expected, bg = render_chat(render_style)
+    tall, expected, bg = render_chat(render_style, rounds=2 if style.startswith("ios26") else 1)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
@@ -261,7 +303,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("out", type=Path)
-    ap.add_argument("--style", choices=["imessage", "ios", "ios-dark", "ipad", "ipad-dark", "whatsapp", "both"], default="both")
+    ap.add_argument("--style", choices=["imessage", "ios", "ios-dark", "ios26-dark", "ipad", "ipad-dark", "whatsapp", "both"],
+                    default="both")
     a = ap.parse_args()
     for s in (["imessage", "whatsapp"] if a.style == "both" else [a.style]):
         print(make(a.out, s))

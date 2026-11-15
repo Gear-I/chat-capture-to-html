@@ -38,7 +38,7 @@ from chat_capture_to_html.capture import HASH_OK, find_capture_folders, load_cap
 from chat_capture_to_html.pipeline import build_chat
 
 # Compared with the baseline; "placements" is compared but printed as a count.
-FIELDS = ["shots", "verified", "hash_problems", "orphans", "skipped", "runs", "gaps", "messages", "lines",
+FIELDS = ["shots", "verified", "hash_problems", "orphans", "skipped", "runs", "gaps", "messages", "doubtful", "lines",
           "pictures", "band", "pane"]
 
 
@@ -65,6 +65,7 @@ def summarise(folder: Path, root: Path) -> dict:
         "runs": len(res.segment_order),
         "gaps": max(0, len(res.segment_order) - 1),
         "messages": sum(1 for m in res.messages if m.kind == "bubble"),
+        "doubtful": sum(1 for m in res.messages if getattr(m, "doubt", "")),  # marked from 0.5.6 on
         "lines": sum(1 for m in res.messages if m.kind != "bubble"),
         "pictures": sum(getattr(i, "pictures", 0) for i in shots),  # counted from 0.5.2 on
         "band": [res.content_top, res.content_bottom],
@@ -111,13 +112,13 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"chat-capture-to-html {__version__}, {len(folders)} capture(s)"
           + (f", baseline from {baseline['version']}" if baseline else ""))
-    print(f"{'id':12}  shots  hash!  runs  gaps  msgs  lines  pics  band")
+    print(f"{'id':12}  shots  hash!  runs  gaps  msgs  doubt  lines  pics  band")
     results, failed = [], False
     for folder in folders:
         r = summarise(folder, a.corpus)
         results.append(r)
         print(f"{r['id']:12}  {r['shots']:5}  {r['hash_problems']:5}  {r['runs']:4}  {r['gaps']:4}  {r['messages']:4}"
-              f"  {r['lines']:5}  {r['pictures']:4}  {r['band'][0]}-{r['band'][1]}"
+              f"  {r['doubtful']:5}  {r['lines']:5}  {r['pictures']:4}  {r['band'][0]}-{r['band'][1]}"
               + (f"  {r['path']}" if a.show_paths else ""))
 
     if baseline is not None:

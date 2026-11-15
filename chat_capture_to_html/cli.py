@@ -135,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
                          left=a.left, right=a.right)
         target.write_text(render(res, target, a.me, a.them or cap.chat), encoding="utf-8")
         say(f"  {sum(1 for m in res.messages if m.kind == 'bubble')} messages -> {target}")
+        n_doubt = sum(1 for m in res.messages if m.doubt)
+        if n_doubt:
+            say(f"  ! {n_doubt} message(s) found in fewer screenshots than show their place; marked in the report")
         for w in res.warnings:
             say(f"  ! {w}")
         if a.diagnose:

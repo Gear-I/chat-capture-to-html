@@ -47,6 +47,7 @@ class Message:
     text_from: list[int] = field(default_factory=list)
     is_name_label: bool = False
     views: list[Source] = field(default_factory=list)  # what to show when no text was read, top to bottom
+    doubt: str = ""              # why this may not be a message (seen in fewer shots than show its spot)
 
     @property
     def text(self) -> str:
@@ -302,6 +303,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
             msg.views.append(Source(idx[k], (b.x0 + xo, b.y0 + top, b.x1 + xo, b.y1 + top), b.complete))
         messages.append(msg)
 
+    _flag_partly_seen(messages, places, idx, bh)
+
     # ------------------------------------------------ text outside bubbles
     progress("reading text between bubbles" if engine is not None else "finding lines between bubbles")
     metas: list[Message] = []
@@ -381,6 +384,30 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
                       [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+
+
+def _flag_partly_seen(messages, places, idx, bh: int, margin: int = 8) -> None:
+    """Mark bubbles found in fewer screenshots than show their whole spot.
+
+    A real message is in every screenshot whose chat area shows its place in
+    the chat. A part of an animated picture (GIF, sticker), a typing
+    indicator or a passing overlay is only in some of them. Such bubbles stay
+    in the report, marked, so the reader can check them against the shots."""
+    by_seg_shot = {}  # (segment, shot index) -> top of that shot's chat area on the shared axis
+    for k, i in enumerate(idx):
+        pl = places[k]
+        by_seg_shot[(pl.segment, i)] = pl.y
+    for m in messages:
+        if m.kind != "bubble":
+            continue
+        found = {s.shot for s in m.sources}
+        showing = {i for (seg, i), y in by_seg_shot.items()
+                   if seg == m.segment and y <= m.gy0 - margin and y + bh >= m.gy1 + margin}
+        missing = showing - found
+        if missing:
+            m.doubt = (f"seen in {len(found)} of {len(found | showing)} screenshots that show this spot "
+                       f"(not in {', '.join('#' + str(i + 1) for i in sorted(missing))}); "
+                       "may not be a message, for example part of an animated picture")
 
 
 def _inside_picture(b: Bubble, boxes, top: int) -> bool:

@@ -173,6 +173,8 @@ What you have confirmed by looking at the screenshots can be written down and ch
 - The script uses only the tool's basic functions, so it also runs with older installed versions. To compare two versions, copy the script out of the repository first, then install each version and run the copy.
 - The exit code is `1` when anything differs from the baseline or the expected values, and `0` otherwise.
 
+When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE A B SHIFT` shows, in numbers only, which rows and columns differ, whether each part matches when moved by a few pixels on its own, and how the large areas in both shots measure against the picture rules. Take A, B and SHIFT from the `--diagnose` line (`#B: ... best match ... at SHIFT px`).
+
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE). The packages it uses, and their licences, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

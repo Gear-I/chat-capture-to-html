@@ -49,7 +49,8 @@ def _diagnose(res) -> None:
                   + f"; {info.bubbles} bubbles{_pics(info)}")
         else:
             print(f"  #{n}: matched #{pl.matched_with + 1}, scrolled {pl.y - res.shots[pl.matched_with].placement.y:+d} px, "
-                  f"diff {pl.score:.3f}; {info.bubbles} bubbles{_pics(info)}")
+                  f"diff {pl.score:.3f}" + (f", parts moved up to {pl.moved} px on their own" if pl.moved else "")
+                  + f"; {info.bubbles} bubbles{_pics(info)}")
 
 
 def main(argv: list[str] | None = None) -> int:

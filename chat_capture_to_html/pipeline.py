@@ -12,7 +12,7 @@ from PIL import Image
 from .bubbles import Bubble, background_color, find_bubbles, luminance
 from .capture import Capture
 from .layout import (Placement, blank_pictures, column_change, content_band, find_chat_pane, moving_strips,
-                     picture_boxes, place_shots, to_gray)
+                     picture_boxes, place_shots, to_gray, trim_unsteady_edges)
 from .ocr import Line
 
 TIME_TAIL_RE = re.compile(r"^(?P<body>.*?)[\s,]*(?P<time>\d{1,2}[:.\-]\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[\s\W_vVwW]{0,4}$")
@@ -204,6 +204,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     middle: list[Placement] = []
     if top is None or bottom is None:
         t_auto, b_auto, middle = content_band(grays, keep)
+        t_auto, b_auto = trim_unsteady_edges(grays, t_auto, b_auto, keep)
     else:
         t_auto, b_auto = top, bottom
     top = t_auto if top is None else top
@@ -217,7 +218,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         infos[i].used = True
         pl = places[k]
         infos[i].placement = Placement(pl.segment, pl.y, idx[pl.matched_with] if pl.matched_with is not None else None,
-                                       pl.score, pl.note)
+                                       pl.score, pl.note, pl.moved)
 
     # ------------------------------------------------ bubbles on the shared axis
     inst = []  # (k, bubble, segment, gy0, gy1)

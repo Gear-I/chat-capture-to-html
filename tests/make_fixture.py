@@ -148,7 +148,9 @@ def paint_frames(tall, frame):
         for k in range(6):
             cy, cx, r = rng.random(3) * [1, 1, 0.4] + [0, 0, 0.1]
             a += np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / r ** 2)[..., None] * np.array(GIF_COLOURS[order[k % 4]])
-        a = a / a.max() * 190 + 20 + rng.normal(0, 14, (h, w, 1))  # grain everywhere, nothing flat
+        a = a / a.max() * 190 + 20
+        grain = rng.random((h, w, 1)) < 0.35  # real GIF frames: grain or detail on about a third of pixels
+        a += grain * rng.normal(0, 14, (h, w, 1))
         pic = Image.fromarray(a.clip(0, 255).astype("uint8"))
         m = Image.new("L", (w, h), 0)
         ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), 40, fill=255)
@@ -184,16 +186,41 @@ def _ios_screen(tall, top, bg, clock, title, gradient, dark=False):
     return img
 
 
-def _ios26_screen(tall, top, bg, clock, title, dark=True):
+def _spring(img, bg, amp, phase):
+    """Bubbles caught while the chat is still settling after a scroll: each
+    block of content (between empty rows) sits up to ``amp`` pixels away from
+    its resting place, by an amount that changes slowly down the screen."""
+    import numpy as np
+    a = np.asarray(img)
+    blank = (a == np.array(bg, np.uint8)).all(axis=2).all(axis=1)
+    out = Image.new("RGB", img.size, bg)
+    y, h = 0, a.shape[0]
+    while y < h:
+        if blank[y]:
+            y += 1
+            continue
+        y1 = y
+        while y1 < h and not blank[y1]:
+            y1 += 1
+        dy = int(round(amp * np.sin(2 * np.pi * (y + y1) / 2 / 1400 + phase)))
+        out.paste(img.crop((0, y, img.width, y1)), (0, y + dy))
+        y = y1
+    return out
+
+
+def _ios26_screen(tall, top, bg, clock, title, dark=True, spring=None):
     """iOS 26 Messages: no solid bars. The chat runs to both edges of the
     screen; near the top and bottom it fades into a soft blur, and floating
     controls (back button, contact picture and name pill, input field) are
-    drawn over it in fixed places, partly over chat that is still readable."""
+    drawn over it in fixed places, partly over chat that is still readable.
+    ``spring`` = (amp, phase) shows bubbles not yet settled after a scroll."""
     import numpy as np
     img = Image.new("RGB", (W, H), bg)
     src_top = top - HEADER
     win = tall.crop((0, max(src_top, 0), W, min(src_top + H, tall.height)))
     img.paste(win, (0, max(-src_top, 0)))
+    if spring:
+        img = _spring(img, bg, *spring)
     sharp = np.asarray(img).astype(np.float32)
     soft = np.asarray(img.filter(ImageFilter.GaussianBlur(14))).astype(np.float32) * 0.55
     ramp = np.zeros(H, np.float32)  # 1 = fully blurred, 0 = untouched
@@ -257,12 +284,12 @@ def _ipad_screen(tall, top, bg, clock, title, subpixel=0.0, list_tint=0, dark=Fa
     return img
 
 
-def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0):
+def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0, spring=None):
     dark = style.endswith("-dark")
     if style.startswith("ipad"):
         return _ipad_screen(tall, top, bg, clock, title, subpixel, list_tint, dark)
     if style.startswith("ios26"):
-        return _ios26_screen(tall, top, bg, clock, title, dark)
+        return _ios26_screen(tall, top, bg, clock, title, dark, spring)
     if style.startswith("ios"):
         return _ios_screen(tall, top, bg, clock, title, gradient=True, dark=dark)
     img = Image.new("RGB", (W, H), bg)
@@ -320,7 +347,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
         sub = rnd.choice([0.25, 0.5, 0.75]) if style.startswith("ipad") and i else 0.0
         if tall.info.get("pictures"):
             paint_frames(tall, i)  # the GIF has moved on by the time of each shot
-        img = screen(tall, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2)
+        spring = (rnd.uniform(2, 4.5), rnd.uniform(0, 6.28)) if ios26 and i else None  # up to 9 px apart; 8 seen on a real capture
+        img = screen(tall, top, bg, clock, chat, style, sub, list_tint=(i % 3) * 2, spring=spring)
         stamp = when.strftime("%m_%d_%Y_%H_%M_%S")
         n = n + 1 if stamp == last else 0  # UFADE adds _1, _2, ... within the same second
         name = f"{chat}_{stamp}" + (f"_{n}" if n else "")

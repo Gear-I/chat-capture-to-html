@@ -24,6 +24,7 @@ class Placement:
     matched_with: int | None
     score: float | None   # normalised difference of the match (0 = identical, 1 = unrelated)
     note: str = ""        # why the shot before could not be matched, in numbers only
+    moved: int = 0        # largest distance (px) a part had to move on its own to match (bubbles still settling)
 
 
 def to_gray(img: np.ndarray) -> np.ndarray:
@@ -80,11 +81,12 @@ def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]
 def picture_boxes(img: np.ndarray, bg: tuple[int, int, int], block: int = 8) -> list[tuple[int, int, int, int]]:
     """Boxes (x0, y0, x1, y1) of pictures in a screenshot: photos, GIFs, videos.
 
-    A message bubble is a smooth fill with text on it: most of its pixels equal
-    their neighbours, and most of it is one colour (iOS shading changes it only
-    slowly). A photo or GIF has grain or detail almost everywhere and many
-    colours. An animated GIF shows a different frame in every screenshot, so
-    pictures must not be compared when lining shots up."""
+    A message bubble is a smooth fill with text on it: in real screenshots 85%
+    or more of its pixels equal their neighbours, and most of it is one colour
+    (iOS shading changes it only slowly). A photo or GIF has grain or detail on
+    a good part of it (real GIFs measured 63-73% smooth) and many colours.
+    An animated GIF shows a different frame in every screenshot, so pictures
+    must not be compared when lining shots up."""
     h, w, _ = img.shape
     hb, wb = h // block, w // block
     if hb < 4 or wb < 4:
@@ -111,7 +113,7 @@ def picture_boxes(img: np.ndarray, bg: tuple[int, int, int], block: int = 8) -> 
         cols = mean[sel]
         same = (np.abs(cols - np.median(cols, axis=0)).max(axis=1) <= 24).mean()  # blocks in the main colour
         smooth_share = n_smooth[sel].sum() / max(1, n_ink[sel].sum())
-        if smooth_share < 0.6 and same < 0.75:
+        if smooth_share < 0.78 and same < 0.75:
             out.append((int(x * block), int(y * block), int(min(w, (x + bw) * block)), int(min(h, (y + bh) * block))))
     return out
 
@@ -199,6 +201,61 @@ def _scores(sa: np.ndarray, sb: np.ndarray, candidates, min_rows: int, min_overl
     return out
 
 
+# A part of the screen (a bubble, a line between bubbles) may sit a few pixels
+# away from where the scroll puts it: iOS Messages lets bubbles spring into
+# place, and a screenshot can catch them before they settle.
+MAX_LOCAL_SHIFT = 10
+
+
+def _runs(mask: np.ndarray, join: int = 6) -> list[tuple[int, int]]:
+    """Runs of True, joining runs less than ``join`` rows apart."""
+    out: list[tuple[int, int]] = []
+    start = None
+    for i, v in enumerate(list(mask) + [False]):
+        if v and start is None:
+            start = i
+        elif not v and start is not None:
+            if out and start - out[-1][1] <= join:
+                out[-1] = (out[-1][0], i)
+            else:
+                out.append((start, i))
+            start = None
+    return out
+
+
+def _local_fit(sa: np.ndarray, sb: np.ndarray, d: int,
+               max_shift: int = MAX_LOCAL_SHIFT) -> tuple[np.ndarray, np.ndarray, int]:
+    """For B placed at offset d: the overlap rows that still disagree once each
+    block of disagreeing rows may move up to ``max_shift`` pixels on its own,
+    the overlap rows holding text, and the largest move that helped.
+
+    Text that really differs differs at every small shift, so screens that
+    only look alike still disagree; a bubble that sprang a few pixels does not."""
+    a0 = max(0, d)
+    a, b = _overlap(sa, sb, d)
+    ink = _ink_rows(a, b)
+    bad = _strong_cells(a, b).any(axis=1) & ink
+    moved = 0
+    if max_shift <= 0 or not bad.any():
+        return bad, ink, moved
+    out = bad.copy()
+    for r0, r1 in _runs(bad):
+        best = bad[r0:r1]
+        best_n, best_s = int(best.sum()), 0
+        for s in range(-max_shift, max_shift + 1):
+            rb0, rb1 = r0 + a0 - d + s, r1 + a0 - d + s
+            if s == 0 or rb0 < 0 or rb1 > sb.shape[0]:
+                continue
+            x, y = _pair(sa[a0 + r0:a0 + r1], sb[rb0:rb1])
+            m = _strong_cells(x, y).any(axis=1) & ink[r0:r1]
+            if int(m.sum()) < best_n:
+                best, best_n, best_s = m, int(m.sum()), s
+        out[r0:r1] = best
+        if best_s:
+            moved = max(moved, abs(best_s))
+    return out, ink, moved
+
+
 def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     """Share of text rows in the overlap where some column strip clearly
     differs. A true match is near zero; screens that merely look alike (the
@@ -209,12 +266,12 @@ def _disagreement(sa: np.ndarray, sb: np.ndarray, d: int) -> float:
     shifted, and each part of a line may land on a different pixel row. So a
     column strip only counts as differing when it differs from the other
     shot's row and from both of its neighbours, and a row disagrees when at
-    least one strip does."""
-    a, b = _overlap(sa, sb, d)
-    ink = _ink_rows(a, b)
+    least one strip does. A block of rows that matches once moved a few pixels
+    on its own (a bubble still settling) does not disagree; see _local_fit."""
+    bad, ink, _ = _local_fit(sa, sb, d)
     if not ink.any():
         return 1.0
-    return float(_strong_cells(a, b).any(axis=1)[ink].mean())
+    return float(bad[ink].mean())
 
 
 def _strong_cells(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -235,10 +292,9 @@ def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
     eighth of its width from left to right. Numbers only."""
     a, b = _overlap(sa, sb, d)
     h = sb.shape[0]
-    strong = _strong_cells(a, b)
-    ink = _ink_rows(a, b)
+    strong_rows, ink, _ = _local_fit(sa, sb, d)  # rows that still differ after local moves
+    strong = _strong_cells(a, b) & strong_rows[:, None]
     rows = np.arange(max(0, -d), max(0, -d) + a.shape[0])  # these rows of the later shot
-    strong_rows = strong.any(axis=1)
     by_row = []
     for k in range(8):
         sel = ink & (rows * 8 // h == k)
@@ -253,11 +309,8 @@ def _where_disagreeing(sa: np.ndarray, sb: np.ndarray, d: int) -> str:
     return f"disagreeing by eighth, top to bottom: {' '.join(by_row)}%; left to right: {' '.join(by_col)}%"
 
 
-def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
-                  max_disagree: float = 0.05) -> tuple[int | None, float | None, str]:
-    """Scroll offset d so that B[r] == A[r + d], its score, and, when there is
-    no trustworthy match, the reason. Returns d = None when the bands do not
-    overlap or the best match is not clearly better than the alternatives."""
+def _ranked_offsets(sa: np.ndarray, sb: np.ndarray) -> list[tuple[float, int]]:
+    """Candidate scroll offsets d (B[r] == A[r + d]) with their scores, best first."""
     h = sa.shape[0]
     min_rows = max(20, int(h * 0.03))
     # A shared part shorter than this is about one bubble: too little to rule
@@ -267,16 +320,71 @@ def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
     coarse = _scores(_block(sa, step), _block(sb, step), range(-(h // step) + 1, h // step), max(5, min_rows // step),
                      min_overlap // step)
     if not coarse:
-        return None, None, "no overlap holds enough text to compare"
+        return []
     coarse.sort()
     fine: dict[int, float] = {}
     for _, dc in coarse[:12]:
         for sc, d in _scores(sa, sb, range(dc * step - step, dc * step + step + 1), min_rows, min_overlap):
             if d != 0:
                 fine[d] = sc
-    if not fine:
+    return sorted((sc, d) for d, sc in fine.items())
+
+
+def trim_unsteady_edges(grays: list[np.ndarray], top: int, bottom: int, keep: np.ndarray | None = None,
+                        max_score: float = 0.3, zone: float = 0.06) -> tuple[int, int]:
+    """Narrow the chat area where its top or bottom edge does not hold steady
+    chat: on iOS 26 the contact's name floats over the top of the chat and the
+    chat blurs as it slides under it. Each pair of consecutive shots is lined
+    up at its best offset; rows within ``zone`` of either edge that disagree
+    in most of the pairs that see them are left out."""
+    h = bottom - top
+    sigs = [row_signature(g[top:bottom], keep) for g in grays]
+    if len(sigs) < 2 or h < 100:
+        return top, bottom
+    bad = np.zeros(h)
+    seen = np.zeros(h)
+    pairs = 0
+    for i in range(1, len(sigs)):
+        ranked = _ranked_offsets(sigs[i - 1], sigs[i])
+        if not ranked or ranked[0][0] > max_score:
+            continue
+        d = ranked[0][1]
+        rows_bad, ink, _ = _local_fit(sigs[i - 1], sigs[i], d)
+        ra = np.arange(max(0, d), max(0, d) + len(ink))
+        for rows in (ra, ra - d):  # rows of the earlier shot, rows of the later one
+            seen[rows[ink]] += 1
+            bad[rows[rows_bad]] += 1
+        pairs += 1
+    if pairs < 2:
+        return top, bottom
+    # a row is unsteady when most of at least two pairs that hold text there disagree
+    unsteady = (seen >= 2) & (bad > 0.5 * seen)
+    z = max(5, int(h * zone))
+
+    def cut(rows_from_edge: np.ndarray) -> int:
+        """How many rows to cut from an edge: up to the furthest unsteady row
+        such that most of the rows with text before it are unsteady too, so a
+        stray row further in does not cut away good chat."""
+        u = unsteady[rows_from_edge]
+        s = seen[rows_from_edge] >= 2
+        n = 0
+        for k in np.where(u)[0]:
+            if u[:k + 1].sum() > 0.5 * max(1, s[:k + 1].sum()):
+                n = int(k) + 1
+        return n
+
+    return top + cut(np.arange(z)), bottom - cut(np.arange(h - 1, h - 1 - z, -1))
+
+
+def match_details(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3,
+                  max_disagree: float = 0.05) -> tuple[int | None, float | None, str]:
+    """Scroll offset d so that B[r] == A[r + d], its score, and, when there is
+    no trustworthy match, the reason. Returns d = None when the bands do not
+    overlap or the best match is not clearly better than the alternatives."""
+    step = 4
+    ranked = _ranked_offsets(sa, sb)
+    if not ranked:
         return None, None, "no overlap holds enough text to compare"
-    ranked = sorted((sc, d) for d, sc in fine.items())
     best_score, best_d = ranked[0]
     if best_score > max_score:
         return None, best_score, f"best match {best_score:.3f} at {best_d:+d} px is above the limit {max_score:.2f}"
@@ -334,7 +442,7 @@ def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
         else:
             j, d, score = found
             pj = placements[j]
-            placements.append(Placement(pj.segment, pj.y + d, j, score))
+            placements.append(Placement(pj.segment, pj.y + d, j, score, moved=_local_fit(sigs[j], sig, d)[2]))
     return placements
 
 

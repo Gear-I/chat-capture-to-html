@@ -151,6 +151,9 @@ def paint_frames(tall, frame):
         a = a / a.max() * 190 + 20
         grain = rng.random((h, w, 1)) < 0.35  # real GIF frames: grain or detail on about a third of pixels
         a += grain * rng.normal(0, 14, (h, w, 1))
+        # a flat patch, as cartoon GIFs have, in a different place in every frame
+        py, px = int(rng.uniform(0.1, 0.7) * h), int(rng.uniform(0.05, 0.5) * w)
+        a[py:py + h // 6, px:px + w // 3] = GIF_COLOURS[order[0]]
         pic = Image.fromarray(a.clip(0, 255).astype("uint8"))
         m = Image.new("L", (w, h), 0)
         ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), 40, fill=255)

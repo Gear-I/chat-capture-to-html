@@ -197,8 +197,10 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     # Pictures are left out when lining shots up: a GIF shows a different frame
     # in every screenshot. Only these working copies are marked; where either
     # of two shots has a picture, that spot is not compared.
+    pictures: dict[int, list[tuple[int, int, int, int]]] = {}
     for k, i in enumerate(idx):
         boxes = picture_boxes(images[i], background_color(images[i]))
+        pictures[i] = boxes
         infos[i].pictures = len(boxes)
         grays[k] = blank_pictures(grays[k], boxes)
     middle: list[Placement] = []
@@ -226,7 +228,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     for k, band in enumerate(bands):
         bg = background_color(band)
         bgs.append(bg)
-        bubbles = find_bubbles(band, bg)
+        # A flat patch inside a photo or GIF is not a message bubble.
+        bubbles = [b for b in find_bubbles(band, bg) if not _inside_picture(b, pictures[idx[k]], top)]
         infos[idx[k]].bubbles = len(bubbles)
         pl = places[k]
         for b in bubbles:
@@ -378,6 +381,18 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
                       [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+
+
+def _inside_picture(b: Bubble, boxes, top: int) -> bool:
+    """True when most of bubble ``b`` (band coordinates) lies inside one of
+    the picture boxes (screen coordinates, chat pane)."""
+    area = max(1, (b.x1 - b.x0) * (b.y1 - b.y0))
+    for x0, y0, x1, y1 in boxes:
+        w = min(b.x1, x1) - max(b.x0, x0)
+        h = min(b.y1 + top, y1) - max(b.y0 + top, y0)
+        if w > 0 and h > 0 and w * h > 0.5 * area:
+            return True
+    return False
 
 
 def _ink_lines(band: np.ndarray, bg: tuple[int, int, int]) -> list[tuple[int, int, int, int]]:

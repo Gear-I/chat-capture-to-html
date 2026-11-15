@@ -16,7 +16,7 @@ from chat_capture_to_html.capture import load_capture  # noqa: E402
 from chat_capture_to_html.pipeline import build_chat  # noqa: E402
 
 
-@pytest.mark.parametrize("style", ["imessage", "ios", "ios-dark", "ios26-dark", "ipad", "ipad-dark", "whatsapp"])
+@pytest.mark.parametrize("style", ["imessage", "ios", "ios-dark", "ipad", "ipad-dark", "whatsapp"])
 def test_order_sides_and_views_without_ocr(tmp_path, style):
     folder = make_fixture.make(tmp_path, style)
     expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
@@ -37,17 +37,23 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
     assert res.messages[-1].views[0].complete
 
 
-@pytest.mark.parametrize("seed", [1, 2, 3, 4])
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
 def test_ios26_floating_title_and_blur_do_not_break_the_joins(tmp_path, seed):
     """iOS 26 draws the contact's name pill over the chat and blurs the chat as
     it slides under the title. Those rows are not chat that can be compared, so
-    they stay out of the chat area, and every overlapping pair of shots joins."""
+    they stay out of the chat area. The capture also holds an animated picture
+    that shows a different frame in every shot; pictures are not compared. Every
+    overlapping pair of shots joins."""
     folder = make_fixture.make(tmp_path, "ios26-dark", seed=seed)
     res = build_chat(load_capture(folder), None)
     assert len(res.segment_order) == 1 and not res.warnings
     assert res.content_top >= make_fixture.PILL_BOTTOM
+    assert any(info.pictures for info in res.shots)
     expected = json.loads((tmp_path / "expected_ios26-dark.json").read_text(encoding="utf-8"))
-    assert [m.side for m in res.messages] == [e["side"] for e in expected]
+    bubbles = [m for m in res.messages if m.kind == "bubble"]
+    assert [m.side for m in bubbles] == [e["side"] for e in expected if e["side"] != "center"]
+    for m in res.messages:
+        assert m.views and all(v.shot in m.text_from for v in m.views)
 
 
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):

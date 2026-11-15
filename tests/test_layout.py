@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 import make_fixture as mf  # noqa: E402
 
-from chat_capture_to_html.layout import content_band, place_shots, to_gray  # noqa: E402
+from chat_capture_to_html.layout import content_band, picture_boxes, place_shots, to_gray  # noqa: E402
 
 CH = mf.H - mf.HEADER - mf.FOOTER
 
@@ -114,3 +114,16 @@ def test_lookalike_reason_says_where_it_disagrees():
     assert "top to bottom:" in why and "left to right:" in why
     parts = why.split("top to bottom: ")[1].split("%")[0].split()
     assert len(parts) == 8 and all(p == "-" or p.isdigit() for p in parts)
+
+
+@pytest.mark.parametrize("style", ["imessage", "imessage-dark", "whatsapp"])
+def test_picture_boxes_find_pictures_and_never_bubbles(style):
+    """Bubbles (one colour with text) are never taken for pictures; a GIF frame is."""
+    tall, _, bg = mf.render_chat(style, rounds=2)
+    assert picture_boxes(np.asarray(tall), bg) == []
+    tall, _, bg = mf.render_chat(style, rounds=2, pictures=True)
+    found = picture_boxes(np.asarray(tall), bg)
+    truth = tall.info["pictures"]
+    assert len(found) == len(truth)
+    for (x0, y0, x1, y1), (tx0, ty0, tx1, ty1) in zip(sorted(found, key=lambda b: b[1]), truth):
+        assert abs(x0 - tx0) <= 16 and abs(y0 - ty0) <= 16 and abs(x1 - tx1) <= 16 and abs(y1 - ty1) <= 16

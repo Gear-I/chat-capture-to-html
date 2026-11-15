@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 SIG_BINS = 64
@@ -76,6 +77,66 @@ def detect_chrome(grays: list[np.ndarray], tol: float = 10.0) -> tuple[int, int]
     return top, bottom
 
 
+def picture_boxes(img: np.ndarray, bg: tuple[int, int, int], block: int = 8) -> list[tuple[int, int, int, int]]:
+    """Boxes (x0, y0, x1, y1) of pictures in a screenshot: photos, GIFs, videos.
+
+    A message bubble is a smooth fill with text on it: most of its pixels equal
+    their neighbours, and most of it is one colour (iOS shading changes it only
+    slowly). A photo or GIF has grain or detail almost everywhere and many
+    colours. An animated GIF shows a different frame in every screenshot, so
+    pictures must not be compared when lining shots up."""
+    h, w, _ = img.shape
+    hb, wb = h // block, w // block
+    if hb < 4 or wb < 4:
+        return []
+    im = img[:hb * block, :wb * block].astype(np.int16)
+    blocks = im.astype(np.float32).reshape(hb, block, wb, block, 3)
+    mean = blocks.mean(axis=(1, 3))
+    std = blocks.std(axis=(1, 3)).mean(axis=2)
+    off_bg = (np.abs(mean - np.array(bg, np.float32)).sum(axis=2) > 30) | (std > 20)
+    # per block: pixels off the background, and how many of them are smooth
+    smooth = np.zeros(im.shape[:2], bool)
+    smooth[:-1, :-1] = ((np.abs(im[:-1, 1:] - im[:-1, :-1]).max(axis=2) <= 4)
+                        & (np.abs(im[1:, :-1] - im[:-1, :-1]).max(axis=2) <= 4))
+    ink = np.abs(im - np.array(bg, np.int16)).sum(axis=2) > 30
+    n_ink = ink.reshape(hb, block, wb, block).sum(axis=(1, 3))
+    n_smooth = (ink & smooth).reshape(hb, block, wb, block).sum(axis=(1, 3))
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(off_bg.astype(np.uint8), connectivity=8)
+    out = []
+    for i in range(1, n):
+        x, y, bw, bh, area = stats[i]
+        if bw < wb * 0.3 or bh < hb * 0.05 or area < 0.5 * bw * bh:
+            continue
+        sel = labels == i
+        cols = mean[sel]
+        same = (np.abs(cols - np.median(cols, axis=0)).max(axis=1) <= 24).mean()  # blocks in the main colour
+        smooth_share = n_smooth[sel].sum() / max(1, n_ink[sel].sum())
+        if smooth_share < 0.6 and same < 0.75:
+            out.append((int(x * block), int(y * block), int(min(w, (x + bw) * block)), int(min(h, (y + bh) * block))))
+    return out
+
+
+def blank_pictures(gray: np.ndarray, boxes) -> np.ndarray:
+    """A copy of ``gray`` with each picture box marked as not to be compared
+    (NaN). Row signatures carry the mark, and wherever either of two shots is
+    marked, neither is compared there (see _pair). Used for lining shots up
+    only; the report always shows the original screenshots."""
+    if not boxes:
+        return gray
+    g = gray.astype(np.float32, copy=True)
+    for x0, y0, x1, y1 in boxes:
+        g[y0:y1, x0:x1] = np.nan
+    return g
+
+
+def _pair(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``a`` and ``b`` with every cell that is a picture in either set to 0."""
+    m = np.isnan(a) | np.isnan(b)
+    if not m.any():
+        return a, b
+    return np.where(m, 0.0, a), np.where(m, 0.0, b)
+
+
 def row_signature(band: np.ndarray, keep: np.ndarray | None = None) -> np.ndarray:
     """Per row, how much horizontal detail (text strokes, bubble edges) each of
     SIG_BINS column strips holds. Flat areas score zero whatever their colour,
@@ -115,7 +176,7 @@ def _overlap(sa: np.ndarray, sb: np.ndarray, d: int) -> tuple[np.ndarray, np.nda
     h = sa.shape[0]
     a0, a1 = max(0, d), min(h, h + d)
     # row r of B shows the same content as row r + d of A
-    return sa[a0:a1], sb[a0 - d:a1 - d]
+    return _pair(sa[a0:a1], sb[a0 - d:a1 - d])
 
 
 def _ink_rows(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -301,7 +362,7 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
             rows = np.arange(max(0, c0 - off), min(h, c1 - off))
             if not len(rows):
                 continue
-            a, b = x[rows], y[rows + off]
+            a, b = _pair(x[rows], y[rows + off])
             tot = a.sum(axis=1) + b.sum(axis=1)
             err = np.abs(a - b).sum(axis=1) / np.maximum(tot, 1e-9)
             # A row also fails when any single column strip clearly differs (the
@@ -310,9 +371,9 @@ def find_content_band(grays: list[np.ndarray], max_score: float = 0.3,
             # part of a row whose other strips do move with the chat.
             strong = np.ones(len(rows), bool)
             for o in (-1, 0, 1):
-                bo = y[np.clip(rows + off + o, 0, h - 1)]
-                t = a + bo
-                strong &= ((np.abs(a - bo) > 0.6 * t) & (t > 2.0)).any(axis=1)
+                ao, bo = _pair(a, y[np.clip(rows + off + o, 0, h - 1)])
+                t = ao + bo
+                strong &= ((np.abs(ao - bo) > 0.6 * t) & (t > 2.0)).any(axis=1)
             for r, e, s, tt in zip(rows, err, strong, tot):
                 if tt > 0.5 * a.shape[1]:
                     errs[r].append(1.0 if s else float(e))

@@ -16,6 +16,10 @@ def _safe(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).strip(" .") or "chat"
 
 
+def _pics(info) -> str:
+    return f"; {info.pictures} picture(s) left out of lining up" if info.pictures else ""
+
+
 def _diagnose(res) -> None:
     sizes = {(i.width, i.height) for i in res.shots if i.used}
     print(f"  screen size: {', '.join(f'{w}x{h}' for w, h in sorted(sizes))}")
@@ -42,10 +46,10 @@ def _diagnose(res) -> None:
             print(f"  #{n}: not used ({info.skip_reason})")
         elif pl.matched_with is None:
             print(f"  #{n}: segment {pl.segment + 1} start" + (f"; previous shot: {pl.note}" if pl.note else "")
-                  + f"; {info.bubbles} bubbles")
+                  + f"; {info.bubbles} bubbles{_pics(info)}")
         else:
             print(f"  #{n}: matched #{pl.matched_with + 1}, scrolled {pl.y - res.shots[pl.matched_with].placement.y:+d} px, "
-                  f"diff {pl.score:.3f}; {info.bubbles} bubbles")
+                  f"diff {pl.score:.3f}; {info.bubbles} bubbles{_pics(info)}")
 
 
 def main(argv: list[str] | None = None) -> int:

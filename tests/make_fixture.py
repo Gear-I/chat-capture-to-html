@@ -113,10 +113,11 @@ def render_chat(style, rounds=1, pictures=False, ghost=False):
             prev = None
             continue
         if kind == "picture":  # drawn per screenshot by paint_frames; not a message the tool lists
+            # sent by the left-hand party; the bubble that follows sits as close as iOS puts it
             y += 34
             boxes.append((40, y, 40 + int(W * 0.6), y + 560))
             y += 560
-            prev = None
+            prev = "left"
             continue
         y += 8 if prev == kind else 34
         lines = wrap(d, text, f, W * 0.62)

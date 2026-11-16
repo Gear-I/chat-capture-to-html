@@ -91,8 +91,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         hash_line = (f'<span class="hash{" bad" if ps.status != HASH_OK else ""}">'
                      f'{e(ps.path.name)} · SHA-256 <code>{ps.sha256}</code> · {STATUS_TEXT[ps.status]}</span>')
         if m.kind == "meta":
-            rows.append(f'<div class="meta" id="m{n}"><span class="t">{text}</span>'
-                        f'<span class="refs">{src_links}</span></div>')
+            rows.append(f'<div class="meta{" doubt" if m.doubt else ""}" id="m{n}"><span class="t">{text}</span>'
+                        f'<span class="refs">{src_links}</span>'
+                        + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
+                        + '</div>')
             continue
         swatch = f'<span class="sw" style="background:{_hex(m.color)}" title="bubble colour {_hex(m.color)}"></span>' if m.color else ""
         who = m.sender_name or sender[m.side]
@@ -189,7 +191,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}}dt
 .meta .view{{margin:0 auto}}
 .foot{{font-size:12px;color:var(--mut);overflow-wrap:anywhere}}.right .foot{{text-align:right}}
 .hash{{font-size:11px}}.hash code{{font-size:11px}}.bad,.bad a,.hash.bad{{color:var(--bad);font-weight:600}}
-.warn .bubble{{outline:2px solid var(--bad)}}.doubt .bubble{{outline:2px dashed var(--bad)}}.doubtnote{{color:var(--bad)}}
+.warn .bubble{{outline:2px solid var(--bad)}}.doubt .bubble,.meta.doubt .t{{outline:2px dashed var(--bad)}}.doubtnote{{color:var(--bad)}}
 .meta{{align-self:center;text-align:center;font-size:13px;color:var(--mut);max-width:90%}}.meta .refs{{margin-left:6px;font-size:11px}}
 .gap{{align-self:stretch;text-align:center;font-size:13px;color:var(--bad);border-top:2px dashed var(--bad);padding-top:6px}}
 .sw{{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-2px;margin-right:4px}}

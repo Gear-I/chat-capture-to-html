@@ -443,16 +443,21 @@ def _trim_pictures(img: np.ndarray, boxes, bg) -> list[tuple[int, int, int, int]
 
 
 def _surrounded_by_background(b: Bubble, img: np.ndarray, bg, ring: int = 6) -> bool:
-    """True when most of a thin ring around the bubble's box is chat background."""
+    """True when at least three of the four sides of the bubble's box are
+    mostly chat background, in a strip ``ring`` pixels wide.
+
+    A real bubble sent right before or after a picture touches it on one side
+    (top or bottom); the other three are background. A flat patch inside a
+    photo or GIF is surrounded by the picture on all sides, or on two or three
+    at its edge. Sides are judged one by one, so a long side covered by the
+    picture does not outweigh the other three."""
     h, w, _ = img.shape
-    y0, y1 = max(0, b.y0 - ring), min(h, b.y1 + ring)
-    x0, x1 = max(0, b.x0 - ring), min(w, b.x1 + ring)
-    around = np.ones((y1 - y0, x1 - x0), bool)
-    around[b.y0 - y0:b.y1 - y0, b.x0 - x0:b.x1 - x0] = False
-    if not around.any():
-        return False
-    near_bg = np.abs(img[y0:y1, x0:x1].astype(np.int16) - np.array(bg, np.int16)).sum(axis=2) <= 30
-    return float(near_bg[around].mean()) >= 0.5
+    near = lambda a: (np.abs(a.astype(np.int16) - np.array(bg, np.int16)).sum(axis=2) <= 30)  # noqa: E731
+    strips = (img[max(0, b.y0 - ring):b.y0, b.x0:b.x1], img[b.y1:min(h, b.y1 + ring), b.x0:b.x1],
+              img[b.y0:b.y1, max(0, b.x0 - ring):b.x0], img[b.y0:b.y1, b.x1:min(w, b.x1 + ring)])
+    # a side at the edge of the screenshot has no strip: nothing there to be a picture
+    clear = sum(1 for s in strips if s.size == 0 or float(near(s).mean()) >= 0.5)
+    return clear >= 3
 
 
 def _inside_picture(b: Bubble, boxes, top: int, band: np.ndarray, bg) -> bool:

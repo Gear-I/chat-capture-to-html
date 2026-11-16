@@ -101,6 +101,32 @@ def test_a_marked_line_shows_its_note(tmp_path):
     assert html.count('class="foot doubtnote"') == 1 and 'class="meta doubt"' in html
 
 
+def test_bubble_touching_a_picture_on_one_side_is_kept():
+    """Measured on a real capture: a message right below a photo, as wide as
+    the photo, with a flat strip of the photo above its corner. Its top side
+    is all picture, its bottom side 72% and its right side 88% background;
+    it is still a message. Flat parts of the photo are not."""
+    import numpy as np
+    from chat_capture_to_html.bubbles import Bubble
+    from chat_capture_to_html.pipeline import _surrounded_by_background
+    # positions and sizes as measured (shot 1320 px wide)
+    rng = np.random.default_rng(0)
+    img = np.zeros((1400, 1320, 3), np.uint8)                       # dark background
+    img[100:771, 552:1264] = rng.integers(40, 220, (671, 712, 3))   # photo
+    img[571:771, 1150:1259] = 90                                    # flat strip at its lower right corner
+    img[771:983, 552:1259] = (10, 132, 255)                         # the message, right against the photo
+    img[983:989, 552:750] = 120                                     # something just below: 28% of the bottom side
+    img[771:796, 1259:1265] = 120                                   # and on the right: 12% of that side
+    img[300:360, 700:830] = 200                                     # flat patch inside the photo
+
+    def bubble(x0, y0, x1, y1):
+        return Bubble(x0, y0, x1, y1, (0, 0, 0), "right", False, False)
+
+    assert _surrounded_by_background(bubble(552, 771, 1259, 983), img, (0, 0, 0))
+    assert not _surrounded_by_background(bubble(1150, 571, 1259, 771), img, (0, 0, 0))
+    assert not _surrounded_by_background(bubble(700, 300, 830, 360), img, (0, 0, 0))
+
+
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):
     def no_engine(*a, **k):
         raise AssertionError("--no-ocr must not load an OCR engine")

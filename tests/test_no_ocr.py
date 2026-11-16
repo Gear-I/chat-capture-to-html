@@ -54,6 +54,8 @@ def test_ios26_floating_title_and_blur_do_not_break_the_joins(tmp_path, seed):
     expected = json.loads((tmp_path / "expected_ios26-dark.json").read_text(encoding="utf-8"))
     bubbles = [m for m in res.messages if m.kind == "bubble"]
     assert [m.side for m in bubbles] == [e["side"] for e in expected if e["side"] != "center"]
+    # the bubble right after the picture is not taken into it, nor lost, nor marked
+    assert not any(m.doubt for m in res.messages)
     for m in res.messages:
         assert m.views and all(v.shot in m.text_from for v in m.views)
 
@@ -85,6 +87,18 @@ def test_something_in_one_shot_only_is_marked_not_hidden(tmp_path, style, seed):
     assert cli.main([str(folder), "-o", str(out), "--no-ocr", "-q"]) == 2  # one bad hash in the fixture
     html = out.read_text(encoding="utf-8")
     assert html.count('class="foot doubtnote"') == 1 and "may not be messages" in html
+
+
+def test_a_marked_line_shows_its_note(tmp_path):
+    """Something marked that ends up shown as a line between messages (a
+    centred item) shows the same note as a marked message."""
+    from chat_capture_to_html.report import render
+    folder = make_fixture.make(tmp_path, "imessage")
+    res = build_chat(load_capture(folder), None)
+    line = next(m for m in res.messages if m.kind != "bubble")
+    line.doubt = "seen in 1 of 2 screenshots that show this spot (not in #2); may not be a message"
+    html = render(res, tmp_path / "r.html", "Me", "Them")
+    assert html.count('class="foot doubtnote"') == 1 and 'class="meta doubt"' in html
 
 
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):

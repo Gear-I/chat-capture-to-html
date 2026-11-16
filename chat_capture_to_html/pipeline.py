@@ -200,7 +200,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     # of two shots has a picture, that spot is not compared.
     pictures: dict[int, list[tuple[int, int, int, int]]] = {}
     for k, i in enumerate(idx):
-        boxes = picture_boxes(images[i], background_color(images[i]))
+        bg = background_color(images[i])
+        boxes = _trim_pictures(images[i], picture_boxes(images[i], bg), bg)
         pictures[i] = boxes
         infos[i].pictures = len(boxes)
         grays[k] = blank_pictures(grays[k], boxes)
@@ -230,7 +231,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         bg = background_color(band)
         bgs.append(bg)
         # A flat patch inside a photo or GIF is not a message bubble.
-        bubbles = [b for b in find_bubbles(band, bg) if not _inside_picture(b, pictures[idx[k]], top)]
+        bubbles = [b for b in find_bubbles(band, bg) if not _inside_picture(b, pictures[idx[k]], top, band, bg)]
         infos[idx[k]].bubbles = len(bubbles)
         pl = places[k]
         for b in bubbles:
@@ -410,16 +411,59 @@ def _flag_partly_seen(messages, places, idx, bh: int, margin: int = 8) -> None:
                        "may not be a message, for example part of an animated picture")
 
 
-def _inside_picture(b: Bubble, boxes, top: int) -> bool:
-    """True when most of bubble ``b`` (band coordinates) lies inside one of
-    the picture boxes (screen coordinates, chat pane)."""
-    area = max(1, (b.x1 - b.x0) * (b.y1 - b.y0))
+def _trim_pictures(img: np.ndarray, boxes, bg) -> list[tuple[int, int, int, int]]:
+    """Picture boxes without the real bubbles caught at their top or bottom.
+
+    A picture area can take in a bubble sent just before or after it, because
+    the gap between them is small. Such a bubble is chat and must still be
+    compared when lining shots up, so the box is cut back to exclude it."""
+    if not boxes:
+        return boxes
+    bubbles = find_bubbles(img, bg)
+    out = []
     for x0, y0, x1, y1 in boxes:
-        w = min(b.x1, x1) - max(b.x0, x0)
-        h = min(b.y1 + top, y1) - max(b.y0 + top, y0)
-        if w > 0 and h > 0 and w * h > 0.5 * area:
-            return True
-    return False
+        for b in bubbles:
+            ov_w = min(b.x1, x1) - max(b.x0, x0)
+            ov_h = min(b.y1, y1) - max(b.y0, y0)
+            if ov_w <= 0 or ov_h <= 0 or ov_w * ov_h < 0.5 * (b.x1 - b.x0) * (b.y1 - b.y0):
+                continue
+            if _surrounded_by_background(b, img, bg):
+                if (b.y0 + b.y1) / 2 > (y0 + y1) / 2:
+                    y1 = min(y1, b.y0 - 2)
+                else:
+                    y0 = max(y0, b.y1 + 2)
+        if y1 - y0 <= 20:
+            continue
+        # the bubble may have been wider than the picture: shrink to what is left
+        cols = np.where((np.abs(img[y0:y1, x0:x1].astype(np.int16) - np.array(bg, np.int16)).sum(axis=2) > 30).any(axis=0))[0]
+        if len(cols):
+            x0, x1 = x0 + int(cols[0]), x0 + int(cols[-1]) + 1
+        out.append((x0, y0, x1, y1))
+    return out
+
+
+def _surrounded_by_background(b: Bubble, img: np.ndarray, bg, ring: int = 6) -> bool:
+    """True when most of a thin ring around the bubble's box is chat background."""
+    h, w, _ = img.shape
+    y0, y1 = max(0, b.y0 - ring), min(h, b.y1 + ring)
+    x0, x1 = max(0, b.x0 - ring), min(w, b.x1 + ring)
+    around = np.ones((y1 - y0, x1 - x0), bool)
+    around[b.y0 - y0:b.y1 - y0, b.x0 - x0:b.x1 - x0] = False
+    if not around.any():
+        return False
+    near_bg = np.abs(img[y0:y1, x0:x1].astype(np.int16) - np.array(bg, np.int16)).sum(axis=2) <= 30
+    return float(near_bg[around].mean()) >= 0.5
+
+
+def _inside_picture(b: Bubble, boxes, top: int, band: np.ndarray, bg) -> bool:
+    """True when bubble ``b`` (band coordinates) is a flat patch of a picture:
+    most of it lies inside one of the picture boxes (screen coordinates, chat
+    pane) and what surrounds it is picture, not chat background."""
+    area = max(1, (b.x1 - b.x0) * (b.y1 - b.y0))
+    if not any(max(0, min(b.x1, x1) - max(b.x0, x0)) * max(0, min(b.y1 + top, y1) - max(b.y0 + top, y0)) > 0.5 * area
+               for x0, y0, x1, y1 in boxes):
+        return False
+    return not _surrounded_by_background(b, band, bg)
 
 
 def _ink_lines(band: np.ndarray, bg: tuple[int, int, int]) -> list[tuple[int, int, int, int]]:

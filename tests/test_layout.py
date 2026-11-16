@@ -118,11 +118,14 @@ def test_lookalike_reason_says_where_it_disagrees():
 
 @pytest.mark.parametrize("style", ["imessage", "imessage-dark", "whatsapp"])
 def test_picture_boxes_find_pictures_and_never_bubbles(style):
-    """Bubbles (one colour with text) are never taken for pictures; a GIF frame is."""
+    """Bubbles (one colour with text) are never taken for pictures; a GIF frame
+    is, and a bubble sent right after it is not part of its box."""
+    from chat_capture_to_html.pipeline import _trim_pictures
     tall, _, bg = mf.render_chat(style, rounds=2)
     assert picture_boxes(np.asarray(tall), bg) == []
     tall, _, bg = mf.render_chat(style, rounds=2, pictures=True)
-    found = picture_boxes(np.asarray(tall), bg)
+    img = np.asarray(tall)
+    found = _trim_pictures(img, picture_boxes(img, bg), bg)
     truth = tall.info["pictures"]
     assert len(found) == len(truth)
     for (x0, y0, x1, y1), (tx0, ty0, tx1, ty1) in zip(sorted(found, key=lambda b: b[1]), truth):

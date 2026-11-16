@@ -48,6 +48,7 @@ class Message:
     is_name_label: bool = False
     views: list[Source] = field(default_factory=list)  # what to show when no text was read, top to bottom
     doubt: str = ""              # why this may not be a message (seen in fewer shots than show its spot)
+    cut: str = ""                # "top", "bottom" or "top and bottom": that edge of the message is in no screenshot
 
     @property
     def text(self) -> str:
@@ -247,7 +248,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                 continue
             inter = min(a1, b1) - max(a0, b0)
             xin = min(ba.x1, bb.x1) - max(ba.x0, bb.x0)
-            if inter > 0.5 * min(a1 - a0, b1 - b0) and xin > 0.5 * min(ba.x1 - ba.x0, bb.x1 - bb.x0):
+            if xin <= 0.5 * min(ba.x1 - ba.x0, bb.x1 - bb.x0):
+                continue
+            # Two pieces of one message taller than the screen: each runs past the
+            # chat area's edge into the stretch the other one shows.
+            continues = inter > 60 and ((ba.cut_bottom and bb.cut_top and a0 < b0 and a1 < b1)
+                                        or (bb.cut_bottom and ba.cut_top and b0 < a0 and b1 < a1))
+            if inter > 0.5 * min(a1 - a0, b1 - b0) or continues:
                 uf.union(a, b)
     clusters: dict[int, list[int]] = {}
     for a in range(len(inst)):
@@ -300,6 +307,15 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       lines=[g[1].text for g in kept],
                       conf=float(np.mean([g[1].conf for g in kept])) if kept else 0.0,
                       sources=sources, text_from=sorted({idx[inst[a][0]] for a in chosen}))
+        # Is each end of the message in some screenshot? One of the pieces that
+        # reach furthest up (down) must show where the bubble ends. A message
+        # taller than the screen, which UFADE's scrolling can jump past, may
+        # lose one or both ends; that is shown, not hidden.
+        top_seen = any(_shows_end(inst[a][1], "top", images[idx[inst[a][0]]], top, bgs[inst[a][0]])
+                       for a in members if inst[a][3] <= gy0 + 4)
+        bottom_seen = any(_shows_end(inst[a][1], "bottom", images[idx[inst[a][0]]], top, bgs[inst[a][0]])
+                          for a in members if inst[a][4] >= gy1 - 4)
+        msg.cut = " and ".join(x for x, seen in (("top", top_seen), ("bottom", bottom_seen)) if not seen)
         for a in sorted(chosen, key=lambda a: inst[a][3]):
             k, b, _, _, _ = inst[a]
             msg.views.append(Source(idx[k], (b.x0 + xo, b.y0 + top, b.x1 + xo, b.y1 + top), b.complete))
@@ -386,6 +402,34 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
                       [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+
+
+def _shows_end(b: Bubble, side: str, img: np.ndarray, top: int, bg, reach: int = 80) -> bool:
+    """True when the bubble's ``side`` ("top" or "bottom") end is in the
+    screenshot ``img`` (chat pane, screen coordinates; the bubble in chat-area
+    coordinates, which start at row ``top``).
+
+    A bubble that does not touch that edge of the chat area ends inside it.
+    One that does may end exactly there, or just beyond, outside the chat area
+    but still in the screenshot: it is followed outwards, up to ``reach``
+    rows. If chat background follows, the end is in the screenshot. If the
+    bubble runs into something else first (a blurred title, a floating
+    control, the input bar, the edge of the screen), its end is not."""
+    if not (b.cut_top if side == "top" else b.cut_bottom):
+        return True
+    h = img.shape[0]
+    x0, x1 = b.x0, b.x1
+    colour = np.array(b.color, np.int16)
+    back = np.array(bg, np.int16)
+    rows = (range(top + b.y0 - 1, max(-1, top + b.y0 - 1 - reach), -1) if side == "top"
+            else range(top + b.y1, min(h, top + b.y1 + reach)))
+    for r in rows:
+        seg = img[r, x0:x1].astype(np.int16)
+        if (np.abs(seg - back).sum(axis=1) <= 30).mean() >= 0.9:
+            return True                           # background: the bubble ended
+        if (np.abs(seg - colour).sum(axis=1) <= 40).mean() < 0.3:
+            return False                          # something else covers it
+    return False
 
 
 def _flag_partly_seen(messages, places, idx, bh: int, margin: int = 8) -> None:

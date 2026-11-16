@@ -25,6 +25,7 @@ def test_order_sides_and_views_without_ocr(tmp_path, style):
     assert not res.text_read and not res.warnings
     assert [m.side for m in res.messages] == [e["side"] for e in expected]
     assert not any(m.doubt for m in res.messages)  # every real message is in every shot that shows it
+    assert not any(m.cut for m in res.messages)  # every message ends inside some screenshot
     for m in res.messages:
         assert not m.lines and m.views
         for v in m.views:

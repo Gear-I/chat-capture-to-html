@@ -111,6 +111,7 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             f'screenshots {src_links}</div>'
             f'<div class="foot">{hash_line}</div>'
             + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
+            + (f'<div class="foot doubtnote">&#9888; {e(_cut_note(m.cut))}</div>' if getattr(m, "cut", "") else "")
             + '</div>')
 
     n_ok = sum(1 for s in shots if s.status == HASH_OK)
@@ -145,6 +146,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     if cap.orphan_hash_files:
         warn_items.append(f"{len(cap.orphan_hash_files)} hash file(s) (.txt or .case.json) have no matching PNG.")
     warn_items += cap.device_warnings()
+    n_cut = sum(1 for m in res.messages if m.kind == "bubble" and getattr(m, "cut", ""))
+    if n_cut:
+        warn_items.append(f"{n_cut} message(s) reach past the edge of every screenshot that shows them; the part "
+                          "beyond that edge was not captured, and they are marked.")
     n_doubt = sum(1 for m in res.messages if getattr(m, "doubt", ""))
     if n_doubt:
         warn_items.append(f"{n_doubt} message(s) were found in fewer screenshots than show their place in the chat; "
@@ -256,6 +261,13 @@ lb.addEventListener('click',ev=>{{if(ev.target===lb||ev.target.tagName==='BUTTON
 document.addEventListener('keydown',ev=>{{if(ev.key==='Escape')lb.classList.remove('on');}});
 </script></body></html>
 """
+
+
+def _cut_note(cut: str) -> str:
+    part = {"top": "The top of this message is", "bottom": "The bottom of this message is",
+            "top and bottom": "The top and the bottom of this message are"}.get(cut, "Part of this message is")
+    return (f"{part} in no screenshot: it reaches past the edge in every screenshot that shows it, "
+            "so that part was not captured (a message taller than the screen can be skipped by the capture).")
 
 
 def render_index(items, out_path: Path) -> str:

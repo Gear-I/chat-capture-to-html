@@ -69,11 +69,13 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False):
+def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False, long=False):
     """Draw the whole chat as one tall image. With rounds > 1 the conversation
     repeats, each round numbered so no two messages look the same. With
     ``pictures`` an animated picture (a GIF) follows the fourth message of each
-    round; its box is in ``tall.info["pictures"]`` (see paint_frames)."""
+    round; its box is in ``tall.info["pictures"]`` (see paint_frames). With
+    ``long`` a message taller than the screen follows the tenth; its top and
+    bottom row are in ``tall.info["long"]``."""
     convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
     if ghost:  # an empty stretch where something shows up in one screenshot only (see make)
         convo = convo[:7] + [("space", "")] + convo[7:]
@@ -82,6 +84,12 @@ def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False):
                  convo[r * len(CONVO):r * len(CONVO) + 4] + [("picture", "")] + convo[r * len(CONVO) + 4:(r + 1) * len(CONVO)]]
     if photo:  # a tall still photo sent by the right-hand party, nearly as tall as the screen
         convo = convo[:10] + [("photo", "")] + convo[10:]
+    if long:
+        things = ["Akten", "Schlüssel", "Rechnung", "Laptop", "Ordner", "Kabel", "Belege", "Kamera", "Stempel"]
+        text = " ".join(f"{i}. {things[i % 9]} {'liegt im Lager' if i % 2 else 'ist im Büro, Raum ' + str(i * 7)}."
+                        for i in range(1, 49))
+        convo = convo[:10] + [("left", text)] + convo[10:]
+    long_box = None
     boxes = []
     ghost_box = None
     wa = style == "whatsapp"
@@ -93,7 +101,7 @@ def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False):
           "right": (17, 27, 33) if wa else (255, 255, 255)}
     meta_fg = (142, 142, 147) if dark else (102, 102, 110)
     f, fs = font(51), font(36)
-    tall = Image.new("RGB", (W, 6000 * rounds), bg)
+    tall = Image.new("RGB", (W, 6000 * rounds + (3000 if long else 0)), bg)
     d = ImageDraw.Draw(tall)
     y, prev, expected = 40, None, []
     minute = 9 * 60 + 2
@@ -152,12 +160,16 @@ def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False):
         if wa:
             d.text((x0 + bw - 130, y + bh - 56), stamp, font=fs, fill=(102, 119, 129))
         expected.append({"side": kind, "text": " ".join(lines), "time": stamp if wa else None})
+        if bh > H:
+            long_box = (y, y + bh)
         y += bh
         prev = kind
     tall = tall.crop((0, 0, W, y + 60))
     tall.info["pictures"] = boxes
     if ghost:
         tall.info["ghost"] = ghost_box
+    if long:
+        tall.info["long"] = long_box
     paint_frames(tall, 0)
     return tall, expected, bg
 
@@ -394,10 +406,15 @@ def case_record(file_name: str, size: int, digest: str, start: str, end: str, de
 
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
-         device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False) -> Path:
+         device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False,
+         long: bool = False) -> Path:
     """Write a synthetic capture. ``sidecar`` is "txt" (UFADE before 1.0.6),
     "case" (a <name>.case.json only, as ALEX writes) or "both" (as UFADE writes
-    from 1.0.6 on)."""
+    from 1.0.6 on). With ``long`` the chat holds a message taller than the
+    screen, and the capture skips its top, the way UFADE's focus-based
+    scrolling jumps past the start of such a message: the shot before it ends
+    above the message, the next one starts inside it, and the two do not
+    overlap."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
@@ -405,10 +422,16 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     ios26 = style.startswith("ios26")
-    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost, photo=photo)
+    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost, photo=photo,
+                                     long=long)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
+    ly0 = tall.info["long"][0] if long else None
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones
+        if ly0 is not None and t <= ly0 < t + ch:  # this view would show the long message's top
+            tops.append(ly0 + 40)                   # instead: one inside the message,
+            t = ly0 - ch - 20                       # then one ending just above it
+            ly0 = None
         tops.append(max(t, 0))
         if t <= 0:
             break

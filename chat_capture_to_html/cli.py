@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="chat-capture-to-html",
         description="Turn a UFADE Chat capture folder into an HTML chat. Every PNG is checked against its "
-                    ".txt SHA-256, OCR runs offline, and each message links to its screenshot and hash.")
+                    ".txt or .case.json SHA-256, OCR runs offline, and each message links to its screenshot and hash.")
     p.add_argument("folder", type=Path, help="a chat folder (screenshots/<app>/<chat>) or any folder above it")
     p.add_argument("-o", "--output", type=Path,
                    help="HTML file to write (one chat) or folder for the reports (several chats). Default: current folder")

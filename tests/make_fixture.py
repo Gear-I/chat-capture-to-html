@@ -351,14 +351,53 @@ def screen(tall, top, bg, clock, title, style, subpixel=0.0, list_tint=0, spring
     return img
 
 
-DEVICE = {"udid": "00008101-000A1B2C3D4E5F6A", "product_type": "iPad13,18", "os_version": "26.1",
-          "name": "Test iPad"}
+DEVICE = {"id": "5a2b6f0e-1c3d-5e4f-8a9b-0c1d2e3f4a5b", "serial": "TESTSERIAL01", "model": "iPad13,18",
+          "device_type": "iPad", "manufacturer": "Apple", "os_name": "iPadOS", "os_version": "26.1"}
+
+
+def case_record(file_name: str, size: int, digest: str, start: str, end: str, device: dict,
+                app: str, chat: str, direction: str = "up", tool: str = "UFADE", version: str = "test") -> dict:
+    """A <name>.case.json in the shape UFADE and ALEX write: a CASE/UCO @graph
+    with the acquisition, the configured tool, the file and its hash, the
+    device and its operating system. Invented values only."""
+    org = "kb:organization-test-" + device["manufacturer"]
+    return {"@context": {"kb": "urn:test:case:kb:"}, "@graph": [
+        {"@id": "kb:investigativeaction-1", "@type": "case-investigation:InvestigativeAction",
+         "uco-core:name": "acquired", "uco-core:description": f"{tool} Screenshot",
+         "uco-action:startTime": {"@type": "xsd:dateTime", "@value": start},
+         "uco-action:endTime": {"@type": "xsd:dateTime", "@value": end},
+         "uco-action:object": [{"@id": "kb:device-" + device["id"]}]},
+        {"@id": "kb:configuredtool-1", "@type": "uco-tool:ConfiguredTool", "uco-core:name": tool,
+         "uco-tool:version": version,
+         "uco-configuration:usesConfiguration": {"@type": "uco-configuration:Configuration",
+            "uco-configuration:configurationEntry": [
+                {"@type": "uco-configuration:ConfigurationEntry", "uco-configuration:itemName": k,
+                 "uco-configuration:itemValue": v}
+                for k, v in (("ExtractionMethod", "Chat Capture"), ("ExtractionType", "Logical"), ("AppName", app),
+                             ("ConversationPartner", chat), ("CaptureDirection", direction))]}},
+        {"@id": "kb:screenshot-1", "@type": ["uco-observable:File"], "uco-core:hasFacet": [
+            {"@type": "uco-observable:FileFacet", "uco-observable:extension": ".png",
+             "uco-observable:fileName": file_name, "uco-observable:isDirectory": False,
+             "uco-observable:sizeInBytes": size},
+            {"@type": "uco-observable:ContentDataFacet", "uco-observable:hash": [
+                {"@type": "uco-types:Hash", "uco-types:hashMethod": "SHA256",
+                 "uco-types:hashValue": {"@type": "xsd:hexBinary", "@value": digest}}]}]},
+        {"@id": org, "@type": "uco-identity:Organization", "uco-core:name": device["manufacturer"]},
+        {"@id": "kb:device-" + device["id"], "@type": "uco-observable:Device", "uco-core:hasFacet": [
+            {"@type": "uco-observable:DeviceFacet", "uco-observable:manufacturer": {"@id": org},
+             "uco-observable:deviceType": device["device_type"], "uco-observable:model": device["model"],
+             "uco-observable:serialNumber": device["serial"]}]},
+        {"@id": "kb:operating-system-1", "@type": ["uco-observable:OperatingSystem", "uco-observable:Software"],
+         "uco-core:name": device["os_name"],
+         "uco-core:hasFacet": {"@type": "uco-observable:SoftwareFacet", "uco-observable:version": device["os_version"]}},
+    ]}
 
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
          device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False) -> Path:
-    """Write a synthetic capture. ``sidecar`` is "txt" (as UFADE does today),
-    "json" (the proposed per-screenshot JSON naming the device) or "both"."""
+    """Write a synthetic capture. ``sidecar`` is "txt" (UFADE before 1.0.6),
+    "case" (a <name>.case.json only, as ALEX writes) or "both" (as UFADE writes
+    from 1.0.6 on)."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
@@ -384,6 +423,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
         assert len(showing) >= 2, "the ghost's stretch must be in at least two screenshots"
         ghost_shot = showing[0]
     when = datetime(2026, 11, 12, 14, 30, 5)
+    started = when.strftime("%Y-%m-%dT%H:%M:%SZ")
     last, n = None, 0
     for i, top in enumerate(tops):
         clock = "9:41" if i < len(tops) // 2 else "9:42"
@@ -407,11 +447,10 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
             digest = "0" * 64  # one deliberately wrong hash
         if sidecar in ("txt", "both"):
             (folder / f"{name}.txt").write_text(digest)
-        if sidecar in ("json", "both"):
-            record = {"schema": "ufade-shot/1", "file": png.name, "sha256": digest,
-                      "captured_utc": when.strftime("%Y-%m-%dT%H:%M:%SZ"), "device": device or DEVICE,
-                      "app": app, "chat": chat, "tool": {"name": "UFADE", "version": "test"}}
-            (folder / f"{name}.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
+        if sidecar in ("case", "both"):
+            record = case_record(png.name, png.stat().st_size, digest, started, when.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                 device or DEVICE, app, chat)
+            (folder / f"{name}.case.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
         when += timedelta(seconds=rnd.choice([0, 1, 1, 2]))
     (out / f"expected_{style}.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1), encoding="utf-8")
     return folder

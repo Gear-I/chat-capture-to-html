@@ -21,7 +21,7 @@ which are the evidence.
    no renaming, re-encoding, re-saving, deleting or adding files, and no
    caches or temporary files inside them.
 2. **Hash before use.** Every screenshot is hashed from its bytes on disk
-   and compared with its `.json` and/or `.txt` file before any result
+   and compared with its `.case.json` and/or `.txt` file before any result
    depends on it; when both exist, they must agree. Never
    skip, cache across runs, or "fix" a hash value.
 3. **Report every failure.** A mismatch, a missing or unreadable hash file,

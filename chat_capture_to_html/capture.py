@@ -7,17 +7,13 @@ UFADE writes each chat to ``screenshots/<app>/<chat>/`` as pairs of files::
 
 The ``_n`` suffix is added when several shots fall in the same second.
 
-A capture may instead (or as well) carry a ``<name>.json`` beside each PNG,
-which also names the device. This draft format has been proposed to UFADE's
-author; it is not agreed or final, and may change::
-
-    {"schema": "ufade-shot/1", "file": "<name>.png", "sha256": "<64 hex>",
-     "captured_utc": "2026-11-12T14:30:05Z",
-     "device": {"udid": "...", "product_type": "iPad13,18", "os_version": "26.1", "name": "..."},
-     "app": "Messages", "chat": "Anna", "tool": {"name": "UFADE", "version": "..."}}
-
-Only ``sha256`` is required. The JSON is preferred; a ``.txt`` next to it is
-checked too, and the two must agree.
+UFADE (and ALEX, its Android counterpart) also write a ``<name>.case.json``
+beside each PNG: a CASE/UCO record (JSON-LD, ``@graph``) of the acquisition. It
+holds the file's name, size and SHA-256, the start of the capture and the time
+the record was written (UTC), the tool and version, the chat capture settings
+(app name, chat name, direction) and the device (model, serial number, an ID
+the tool derives from the UDID or serial, operating system). ALEX writes only
+the ``.case.json``. When both exist, the two recorded hashes must agree.
 """
 
 from __future__ import annotations
@@ -43,14 +39,18 @@ HASH_UNREADABLE = "unreadable"
 
 @dataclass
 class Device:
-    udid: str | None = None
-    product_type: str | None = None
+    id: str | None = None             # the device's @id in the CASE record, derived by the tool from UDID or serial
+    serial: str | None = None
+    model: str | None = None
+    device_type: str | None = None
+    manufacturer: str | None = None
+    os_name: str | None = None
     os_version: str | None = None
-    name: str | None = None
 
     def label(self) -> str:
-        bits = [b for b in (self.product_type, f"iOS {self.os_version}" if self.os_version else None) if b]
-        return (self.name + " · " if self.name else "") + (", ".join(bits) or "unknown model")
+        name = " ".join(x for x in (self.manufacturer, self.model) if x) or "unknown model"
+        os = " ".join(x for x in (self.os_name, self.os_version) if x)
+        return ", ".join(x for x in (name, os, f"serial {self.serial}" if self.serial else "") if x)
 
 
 @dataclass
@@ -63,9 +63,10 @@ class Shot:
     taken: datetime | None
     seq: int
     note: str = ""
-    json_path: Path | None = None
+    case_path: Path | None = None     # the <name>.case.json, when present
     device: Device | None = None
     captured_utc: datetime | None = None
+    capture: dict = field(default_factory=dict)  # tool, version, method, app, chat, direction from the .case.json
 
     @property
     def verified(self) -> bool:
@@ -82,15 +83,15 @@ class Capture:
 
     @property
     def devices(self) -> dict[str, Device]:
-        """Devices named by the shots' JSON files, by UDID."""
+        """Devices named by the shots' .case.json files, by device ID."""
         out: dict[str, Device] = {}
         for s in self.shots:
-            if s.device and s.device.udid:
-                out.setdefault(s.device.udid, s.device)
+            if s.device and s.device.id:
+                out.setdefault(s.device.id, s.device)
         return out
 
     def device_warnings(self) -> list[str]:
-        named = [s for s in self.shots if s.device and s.device.udid]
+        named = [s for s in self.shots if s.device and s.device.id]
         if not named:
             return []
         warns = []
@@ -143,49 +144,116 @@ def _parse_utc(value) -> datetime | None:
     return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
-def _read_json_sidecar(path: Path, png_name: str) -> tuple[str | None, str, Device | None, datetime | None]:
-    """(recorded SHA-256, problem, device, capture time) from a <name>.json."""
+def _types(obj: dict) -> list[str]:
+    ty = obj.get("@type", [])
+    return ty if isinstance(ty, list) else [ty]
+
+
+def _facets(obj: dict) -> list[dict]:
+    f = obj.get("uco-core:hasFacet", [])
+    return [x for x in (f if isinstance(f, list) else [f]) if isinstance(x, dict)]
+
+
+def _value(v) -> str | None:
+    if isinstance(v, dict):
+        v = v.get("@value")
+    return None if v in (None, "") else str(v)
+
+
+def _read_case_json(path: Path, png_name: str) -> tuple[str | None, str, Device | None, datetime | None, dict]:
+    """(recorded SHA-256, problem, device, capture time, capture settings) from
+    a UFADE or ALEX ``<name>.case.json``."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as e:
-        return None, f"cannot read the .json file: {e}", None, None
+        return None, f"cannot read the .case.json file: {e}", None, None, {}
     except json.JSONDecodeError as e:
-        return None, f"the .json file is not valid JSON (line {e.lineno})", None, None
-    if not isinstance(data, dict):
-        return None, "the .json file does not hold an object", None, None
-    dev = data.get("device")
+        return None, f"the .case.json file is not valid JSON (line {e.lineno})", None, None, {}
+    graph = data.get("@graph") if isinstance(data, dict) else None
+    if not isinstance(graph, list):
+        return None, "the .case.json file holds no @graph", None, None, {}
+    objs = [o for o in graph if isinstance(o, dict)]
+    by_id = {o.get("@id"): o for o in objs if o.get("@id")}
+
+    capture: dict = {}
+    when = None
+    for o in objs:
+        if "case-investigation:InvestigativeAction" in _types(o):
+            when = _parse_utc(_value(o.get("uco-action:endTime")))
+            capture["started"] = _value(o.get("uco-action:startTime"))
+        if "uco-tool:ConfiguredTool" in _types(o):
+            capture["tool"] = _value(o.get("uco-core:name"))
+            capture["version"] = _value(o.get("uco-tool:version"))
+            conf = o.get("uco-configuration:usesConfiguration") or {}
+            for entry in conf.get("uco-configuration:configurationEntry", []) if isinstance(conf, dict) else []:
+                if isinstance(entry, dict) and entry.get("uco-configuration:itemName"):
+                    capture[entry["uco-configuration:itemName"]] = _value(entry.get("uco-configuration:itemValue"))
+
     device = None
-    if isinstance(dev, dict):
-        device = Device(*(str(dev[k]) if dev.get(k) not in (None, "") else None
-                          for k in ("udid", "product_type", "os_version", "name")))
-    when = _parse_utc(data.get("captured_utc"))
-    named = data.get("file")
-    if isinstance(named, str) and named and named != png_name:
-        return None, f"the .json file describes {named!r}, not this screenshot", device, when
-    digest = data.get("sha256")
-    if not isinstance(digest, str) or not HEX64_RE.fullmatch(digest.strip()):
-        return None, "the .json file holds no SHA-256 value", device, when
-    return digest.strip().lower(), "", device, when
+    for o in objs:
+        if "uco-observable:Device" in _types(o):
+            device = Device(id=str(o.get("@id", "")).removeprefix("kb:device-") or None)
+            for f in _facets(o):
+                if "uco-observable:DeviceFacet" in _types(f):
+                    device.serial = _value(f.get("uco-observable:serialNumber"))
+                    device.model = _value(f.get("uco-observable:model"))
+                    device.device_type = _value(f.get("uco-observable:deviceType"))
+                    maker = f.get("uco-observable:manufacturer")
+                    if isinstance(maker, dict):
+                        device.manufacturer = _value(by_id.get(maker.get("@id"), {}).get("uco-core:name"))
+            break
+    if device is not None:
+        for o in objs:
+            if "uco-observable:OperatingSystem" in _types(o):
+                device.os_name = _value(o.get("uco-core:name"))
+                for f in _facets(o):
+                    device.os_version = device.os_version or _value(f.get("uco-observable:version"))
+
+    files = []  # (file name, SHA-256 or None)
+    for o in objs:
+        if "uco-observable:File" not in _types(o):
+            continue
+        name = digest = None
+        for f in _facets(o):
+            if "uco-observable:FileFacet" in _types(f):
+                name = _value(f.get("uco-observable:fileName"))
+            if "uco-observable:ContentDataFacet" in _types(f):
+                for h in f.get("uco-observable:hash", []):
+                    if isinstance(h, dict) and str(h.get("uco-types:hashMethod", "")).upper() == "SHA256":
+                        digest = _value(h.get("uco-types:hashValue"))
+        files.append((name, digest))
+    mine = [d for n, d in files if n == png_name]
+    if not mine:
+        others = [n for n, _ in files if n]
+        if others:
+            return None, f"the .case.json file describes {others[0]!r}, not this screenshot", device, when, capture
+        return None, "the .case.json file holds no file record", device, when, capture
+    digest = mine[0]
+    if not digest or not HEX64_RE.fullmatch(digest.strip()):
+        return None, "the .case.json file holds no SHA-256 value", device, when, capture
+    return digest.strip().lower(), "", device, when, capture
 
 
 def load_capture(folder: Path) -> Capture:
     folder = Path(folder)
     pngs = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".png")
     txts = {p.stem: p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".txt"}
-    jsons = {p.stem: p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".json"}
+    cases = {p.name[:-len(".case.json")]: p for p in folder.iterdir()
+             if p.is_file() and p.name.lower().endswith(".case.json")}
     cap = Capture(folder=folder, app=folder.parent.name, chat=folder.name)
 
     for png in pngs:
         taken, seq = parse_stamp(png.stem)
         digest = sha256_file(png)
         txt = txts.pop(png.stem, None)
-        js = jsons.pop(png.stem, None)
+        case = cases.pop(png.stem, None)
         device = when = None
+        capture: dict = {}
         notes = []
         records: list[tuple[str, str | None]] = []  # (kind, recorded hash or None if unreadable)
-        if js is not None:
-            rec, problem, device, when = _read_json_sidecar(js, png.name)
-            records.append(("json", rec))
+        if case is not None:
+            rec, problem, device, when, capture = _read_case_json(case, png.name)
+            records.append(("case.json", rec))
             if problem:
                 notes.append(problem)
         if txt is not None:
@@ -196,7 +264,7 @@ def load_capture(folder: Path) -> Capture:
 
         if not records:
             recorded, status = None, HASH_MISSING
-            notes.append("no .json or .txt hash file next to this screenshot")
+            notes.append("no .case.json or .txt hash file next to this screenshot")
         elif any(rec is None for _, rec in records):
             recorded = next((rec for _, rec in records if rec), None)
             status = HASH_UNREADABLE
@@ -205,7 +273,7 @@ def load_capture(folder: Path) -> Capture:
             recorded = records[0][1]
             if len(values) > 1:
                 status = HASH_MISMATCH
-                notes.append("the .json and .txt files record different SHA-256 values")
+                notes.append("the .case.json and .txt files record different SHA-256 values")
             elif recorded == digest:
                 status = HASH_OK
             else:
@@ -213,11 +281,11 @@ def load_capture(folder: Path) -> Capture:
                 notes.append("SHA-256 of the PNG does not match the value in the "
                              + " and ".join(f".{k}" for k, _ in records) + " file")
         cap.shots.append(Shot(png, txt, digest, recorded, status, taken, seq, "; ".join(notes),
-                              json_path=js, device=device, captured_utc=when))
+                              case_path=case, device=device, captured_utc=when, capture=capture))
 
-    cap.orphan_hash_files = sorted(list(txts.values()) + list(jsons.values()))
-    # Capture order: the JSON's capture time where every shot has one (it carries a
-    # time zone), else the timestamp in the file name; then the _n suffix, then name.
+    cap.orphan_hash_files = sorted(list(txts.values()) + list(cases.values()))
+    # Capture order: the .case.json time where every shot has one (UTC), else the
+    # timestamp in the file name; then the _n suffix, then name.
     if cap.shots and all(s.captured_utc for s in cap.shots):
         cap.shots.sort(key=lambda s: (s.captured_utc, s.seq, s.path.name))
     else:

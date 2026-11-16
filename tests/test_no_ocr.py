@@ -127,6 +127,21 @@ def test_bubble_touching_a_picture_on_one_side_is_kept():
     assert not _surrounded_by_background(bubble(700, 300, 830, 360), img, (0, 0, 0))
 
 
+@pytest.mark.parametrize("style", ["ios26-dark", "imessage"])
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_a_tall_still_photo_does_not_split_the_chat(tmp_path, style, seed):
+    """A photo nearly as tall as the screen fills most of what two shots share.
+    With pictures left out there is too little to line them up; a still photo
+    is the same in both shots, so they are lined up with pictures compared,
+    and the diagnosis says so."""
+    folder = make_fixture.make(tmp_path, style, seed=seed, photo=True)
+    expected = json.loads((tmp_path / f"expected_{style}.json").read_text(encoding="utf-8"))
+    res = build_chat(load_capture(folder), None)
+    assert len(res.segment_order) == 1
+    assert [m.side for m in res.messages if m.kind == "bubble"] == [e["side"] for e in expected if e["side"] != "center"]
+    assert any(i.placement and i.placement.with_pictures for i in res.shots)
+
+
 def test_cli_no_ocr_needs_no_engine_and_links_every_view(tmp_path, monkeypatch):
     def no_engine(*a, **k):
         raise AssertionError("--no-ocr must not load an OCR engine")

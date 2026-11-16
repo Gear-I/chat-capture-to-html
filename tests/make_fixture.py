@@ -69,7 +69,7 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style, rounds=1, pictures=False, ghost=False):
+def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False):
     """Draw the whole chat as one tall image. With rounds > 1 the conversation
     repeats, each round numbered so no two messages look the same. With
     ``pictures`` an animated picture (a GIF) follows the fourth message of each
@@ -80,6 +80,8 @@ def render_chat(style, rounds=1, pictures=False, ghost=False):
     if pictures:
         convo = [x for r in range(rounds) for x in
                  convo[r * len(CONVO):r * len(CONVO) + 4] + [("picture", "")] + convo[r * len(CONVO) + 4:(r + 1) * len(CONVO)]]
+    if photo:  # a tall still photo sent by the right-hand party, nearly as tall as the screen
+        convo = convo[:10] + [("photo", "")] + convo[10:]
     boxes = []
     ghost_box = None
     wa = style == "whatsapp"
@@ -104,6 +106,23 @@ def render_chat(style, rounds=1, pictures=False, ghost=False):
             d.text(((W - tw) / 2, y), text, font=fs, fill=meta_fg)
             expected.append({"side": "center", "text": text})
             y += 90
+            prev = None
+            continue
+        if kind == "photo":
+            import numpy as np
+            y += 34
+            ph, pw = int(H * 0.95), int(W * 0.62)
+            rng = np.random.default_rng(7)
+            yy, xx = np.mgrid[0:ph, 0:pw] / max(ph, pw)
+            a = np.zeros((ph, pw, 3))
+            for k in range(14):  # a landscape of soft colour patches, the same in every screenshot
+                cy, cx, r = rng.random(3) * [1, 1, 0.3] + [0, 0, 0.08]
+                a += np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / r ** 2)[..., None] * np.array(GIF_COLOURS[k % 6])
+            a = a / a.max() * 200 + 20 + (rng.random((ph, pw, 1)) < 0.35) * rng.normal(0, 14, (ph, pw, 1))
+            m = Image.new("L", (pw, ph), 0)
+            ImageDraw.Draw(m).rounded_rectangle((0, 0, pw - 1, ph - 1), 40, fill=255)
+            tall.paste(Image.fromarray(a.clip(0, 255).astype("uint8")), (W - 40 - pw, y), m)
+            y += ph
             prev = None
             continue
         if kind == "space":
@@ -337,7 +356,7 @@ DEVICE = {"udid": "00008101-000A1B2C3D4E5F6A", "product_type": "iPad13,18", "os_
 
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
-         device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False) -> Path:
+         device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False) -> Path:
     """Write a synthetic capture. ``sidecar`` is "txt" (as UFADE does today),
     "json" (the proposed per-screenshot JSON naming the device) or "both"."""
     rnd = random.Random(seed)
@@ -347,7 +366,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     folder = out / "screenshots" / app / chat
     folder.mkdir(parents=True, exist_ok=True)
     ios26 = style.startswith("ios26")
-    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost)
+    tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost, photo=photo)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     while True:  # UFADE "Up": start at the newest message, scroll towards older ones

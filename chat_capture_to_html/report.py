@@ -119,7 +119,8 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         pl = info.placement
         where = "" if pl is None else (f"segment {pl.segment + 1}, y={pl.y}" +
                                        (f", matched #{pl.matched_with + 1} (diff {pl.score:.3f}"
-                                        + (f"; parts moved up to {pl.moved} px on their own" if pl.moved else "") + ")"
+                                        + (f"; parts moved up to {pl.moved} px on their own" if pl.moved else "")
+                                        + ("; pictures compared too" if pl.with_pictures else "") + ")"
                                         if pl.matched_with is not None
                                         else ", start of segment" + (f"; previous shot: {pl.note}" if pl.note else "")))
         shot_rows.append(

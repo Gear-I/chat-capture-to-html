@@ -50,6 +50,7 @@ def _diagnose(res) -> None:
         else:
             print(f"  #{n}: matched #{pl.matched_with + 1}, scrolled {pl.y - res.shots[pl.matched_with].placement.y:+d} px, "
                   f"diff {pl.score:.3f}" + (f", parts moved up to {pl.moved} px on their own" if pl.moved else "")
+                  + (", pictures compared too" if pl.with_pictures else "")
                   + f"; {info.bubbles} bubbles{_pics(info)}")
 
 

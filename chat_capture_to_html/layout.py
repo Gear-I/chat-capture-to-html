@@ -25,6 +25,7 @@ class Placement:
     score: float | None   # normalised difference of the match (0 = identical, 1 = unrelated)
     note: str = ""        # why the shot before could not be matched, in numbers only
     moved: int = 0        # largest distance (px) a part had to move on its own to match (bubbles still settling)
+    with_pictures: bool = False  # matched only with pictures compared too (a still photo filling the overlap)
 
 
 def to_gray(img: np.ndarray) -> np.ndarray:
@@ -413,13 +414,21 @@ def match_offset(sa: np.ndarray, sb: np.ndarray, max_score: float = 0.3) -> tupl
     return None if d is None else (d, score)
 
 
-def place_shots(bands: list[np.ndarray], max_score: float = 0.3, keep: np.ndarray | None = None) -> list[Placement]:
+def place_shots(bands: list[np.ndarray], max_score: float = 0.3, keep: np.ndarray | None = None,
+                raw_bands: list[np.ndarray] | None = None) -> list[Placement]:
     """Put every shot on a shared axis, matching each one against the previous
-    shot first and then against every shot already placed."""
-    return _place([row_signature(b, keep) for b in bands], max_score)
+    shot first and then against every shot already placed.
+
+    ``bands`` have pictures marked as not to be compared (blank_pictures). When
+    two shots cannot be matched that way, they are tried once more as in
+    ``raw_bands``, with pictures compared too: a still photo that fills most of
+    the shared part is the same in both shots and lines them up, while an
+    animated GIF still disagrees and is refused as before."""
+    raw = [row_signature(b, keep) for b in raw_bands] if raw_bands is not None else None
+    return _place([row_signature(b, keep) for b in bands], max_score, raw)
 
 
-def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
+def _place(sigs: list[np.ndarray], max_score: float, raw_sigs: list[np.ndarray] | None = None) -> list[Placement]:
     placements: list[Placement] = []
     segment = 0
     for i, sig in enumerate(sigs):
@@ -434,15 +443,23 @@ def _place(sigs: list[np.ndarray], max_score: float) -> list[Placement]:
             if j == i - 1:
                 note = why
             if d is not None:
-                found = (j, d, score)
+                found = (j, d, score, False)
                 break
+        if found is None and raw_sigs is not None:
+            for j in order:
+                d, score, _ = match_details(raw_sigs[j], raw_sigs[i], max_score)
+                if d is not None:
+                    found = (j, d, score, True)
+                    break
         if found is None:
             segment += 1
             placements.append(Placement(segment, 0, None, None, note))
         else:
-            j, d, score = found
+            j, d, score, with_pics = found
             pj = placements[j]
-            placements.append(Placement(pj.segment, pj.y + d, j, score, moved=_local_fit(sigs[j], sig, d)[2]))
+            a, b = (raw_sigs[j], raw_sigs[i]) if with_pics else (sigs[j], sig)
+            placements.append(Placement(pj.segment, pj.y + d, j, score, moved=_local_fit(a, b, d)[2],
+                                        with_pictures=with_pics))
     return placements
 
 

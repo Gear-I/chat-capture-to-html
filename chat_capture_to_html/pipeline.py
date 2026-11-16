@@ -195,6 +195,7 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         grays = [g[:, xo:x_end] for g in grays]
         W = x_end - xo
     keep = moving_strips(grays)  # leave strips that barely change (a sliver of the list) out of matching
+    raw_grays = list(grays)  # with pictures, for shots that only a still photo can line up
     # Pictures are left out when lining shots up: a GIF shows a different frame
     # in every screenshot. Only these working copies are marked; where either
     # of two shots has a picture, that spot is not compared.
@@ -217,12 +218,12 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     bh = bottom - top
 
     progress(f"lining up {len(idx)} screenshots")
-    places = place_shots([g[top:bottom] for g in grays], keep=keep)
+    places = place_shots([g[top:bottom] for g in grays], keep=keep, raw_bands=[g[top:bottom] for g in raw_grays])
     for k, i in enumerate(idx):
         infos[i].used = True
         pl = places[k]
         infos[i].placement = Placement(pl.segment, pl.y, idx[pl.matched_with] if pl.matched_with is not None else None,
-                                       pl.score, pl.note, pl.moved)
+                                       pl.score, pl.note, pl.moved, pl.with_pictures)
 
     # ------------------------------------------------ bubbles on the shared axis
     inst = []  # (k, bubble, segment, gy0, gy1)

@@ -170,6 +170,8 @@ What you have confirmed by looking at the screenshots can be written down and ch
 
 When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE A B SHIFT` shows, in numbers only, which rows and columns differ, whether each part matches when moved by a few pixels on its own, and how the large areas in both shots measure against the picture rules. Take A, B and SHIFT from the `--diagnose` line (`#B: ... best match ... at SHIFT px`).
 
+UFADE can write the accessibility text of the element it focused before a screenshot (`uco-core:statement`, in the device's language) into the `.case.json`. `scripts/statement_check.py CAPTURE` shows where each file holds it, its length and how many comma-separated parts it has, without printing the text; `--show` prints the text too, for your own eyes only. The files are only read.
+
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE). The packages it uses, and their licences, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

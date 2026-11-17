@@ -165,6 +165,7 @@ Every change is listed per capture, for example `runs 2 -> 1; gaps 1 -> 0`. Whet
 What you have confirmed by looking at the screenshots can be written down and checked on every run with `--expected FILE`, a JSON file such as `{"3f9a0c1d2e4b": {"runs": 1, "messages": 53}}`. Any field from the results can be used.
 
 - The capture folders are only read. `--save` refuses a file inside one.
+- A `--baseline` or `--expected` file that is missing or not valid JSON stops the run with a one-line message naming the file and, for JSON, the line. A byte-order mark, as Notepad or PowerShell may write, is accepted.
 - Captures are named by an ID made from their screenshots' SHA-256 values, never by chat or file names, so the output can be shared. `--show-paths` adds the folders, for your own use.
 - The script uses only the tool's basic functions, so it also runs with older installed versions. To compare two versions, copy the script out of the repository first, then install each version and run the copy.
 - The exit code is `1` when anything differs from the baseline or the expected values, and `0` otherwise.

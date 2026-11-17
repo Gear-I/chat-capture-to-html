@@ -126,7 +126,11 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
                                         else ", start of segment" + (f"; previous shot: {pl.note}" if pl.note else "")))
         shot_rows.append(
             f'<tr class="{"" if s.status == HASH_OK else "bad"}"><td>#{i + 1}</td>'
-            f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a></td>'
+            f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a>'
+            + (f'<div class="caption">Accessibility caption of the focused element: \u201c{e(s.caption)}\u201d</div>'
+               if getattr(s, "caption", None) else "")
+            + (f'<div class="caption bad">{e(s.caption_note)}</div>' if getattr(s, "caption_note", "") else "")
+            + '</td>'
             f'<td><code>{s.sha256}</code></td><td><code>{s.recorded_sha256 or "—"}</code>'
             f'<br><small>{" + ".join(x for x, p in ((".case.json", s.case_path), (".txt", s.txt_path)) if p) or "no hash file"}'
             f'{(" · device " + e(s.device.id)) if s.device and s.device.id and len(cap.devices) > 1 else ""}</small></td>'
@@ -146,6 +150,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
     if cap.orphan_hash_files:
         warn_items.append(f"{len(cap.orphan_hash_files)} hash file(s) (.txt or .case.json) have no matching PNG.")
     warn_items += cap.device_warnings()
+    n_caption_bad = sum(1 for s in shots if getattr(s, "caption_note", ""))
+    if n_caption_bad:
+        warn_items.append(f"{n_caption_bad} screenshot(s) have an accessibility caption in their .case.json that does "
+                          "not fit them; see the screenshot table.")
     n_cut = sum(1 for m in res.messages if m.kind == "bubble" and getattr(m, "cut", ""))
     if n_cut:
         warn_items.append(f"{n_cut} message(s) reach past the edge of every screenshot that shows them; the part "
@@ -209,6 +217,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}}dt
 .meta{{align-self:center;text-align:center;font-size:13px;color:var(--mut);max-width:90%}}.meta .refs{{margin-left:6px;font-size:11px}}
 .gap{{align-self:stretch;text-align:center;font-size:13px;color:var(--bad);border-top:2px dashed var(--bad);padding-top:6px}}
 .sw{{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-2px;margin-right:4px}}
+.caption{{font-size:12px;color:var(--mut);margin-top:4px;overflow-wrap:anywhere}}.caption.bad{{color:var(--bad)}}
 .conf.low{{color:var(--bad)}}.src{{margin-right:2px}}
 .tw{{overflow-x:auto}}table{{border-collapse:collapse;font-size:12px;width:100%}}td,th{{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}}
 tr.bad td{{color:var(--bad)}}
@@ -241,7 +250,7 @@ tr.bad td{{color:var(--bad)}}
 </div>
 <h2>Bubble colours</h2><div class="card"><ul>{legend or "<li>none</li>"}</ul></div>
 <h2>Screenshots and hashes</h2>
-<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE (or ALEX) wrote in the .txt or .case.json file at capture time. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.</p>
+<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE (or ALEX) wrote in the .txt or .case.json file at capture time. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.{CAPTION_NOTE if any(getattr(s, "caption", None) for s in shots) else ""}</p>
 <div class="tw"><table><thead><tr><th></th><th>File</th><th>Computed SHA-256</th><th>Recorded SHA-256 (from)</th><th>Check</th><th>Placement</th></tr></thead>
 <tbody>{"".join(shot_rows)}</tbody></table></div>
 {f'<h2>Hash files without a screenshot</h2><ul>{orphans}</ul>' if orphans else ""}
@@ -261,6 +270,12 @@ lb.addEventListener('click',ev=>{{if(ev.target===lb||ev.target.tagName==='BUTTON
 document.addEventListener('keydown',ev=>{{if(ev.key==='Escape')lb.classList.remove('on');}});
 </script></body></html>
 """
+
+
+CAPTION_NOTE = (" The “accessibility caption of the focused element” is what UFADE recorded in the .case.json "
+                "for the element it moved the focus to before that screenshot, as iOS describes it, in the "
+                "device's language. It is shown as UFADE wrote it, as a reading aid: it is not read from the "
+                "screenshot, and the screenshot remains the evidence.")
 
 
 def _cut_note(cut: str) -> str:

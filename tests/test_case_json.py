@@ -109,3 +109,36 @@ def test_mixed_devices_set_the_exit_code(tmp_path):
             obj["@id"] = "kb:device-another"
     first.write_text(json.dumps(data))
     assert main([str(tmp_path / "in"), "-o", str(tmp_path / "out"), "--no-ocr", "-q"]) == 2
+
+
+def test_accessibility_caption_is_shown_with_its_screenshot(tmp_path):
+    folder = make_fixture.make(tmp_path / "in", "imessage", sidecar="both", corrupt=False, captions=True)
+    cap = load_capture(folder)
+    assert cap.shots[0].caption is None                       # UFADE records none for the first shot
+    assert all(s.caption and "Testnachricht" in s.caption for s in cap.shots[1:])
+    assert cap.shots[1].caption == "Message, Testnachricht 1, mit Komma, 9:41 AM"  # kept whole, commas and all
+    assert not any(s.caption_note for s in cap.shots)
+    out = tmp_path / "out"
+    assert main([str(tmp_path / "in"), "-o", str(out), "--no-ocr", "-q"]) == 0
+    page = next(p for p in out.glob("*.html") if p.name != "index.html").read_text(encoding="utf-8")
+    assert page.count("Accessibility caption of the focused element:") == len(cap.shots) - 1
+    assert "Testnachricht 2, mit Komma" in page and "the screenshot remains the evidence" in page
+
+
+def test_caption_for_another_file_is_reported_not_shown(tmp_path):
+    folder = make_fixture.make(tmp_path / "in", "imessage", sidecar="case", corrupt=False, captions=True)
+    second = sorted(folder.glob("*.case.json"))[1]
+    data = json.loads(second.read_text())
+    for obj in data["@graph"]:
+        if obj["@type"] == "uco-core:Annotation":
+            obj["uco-core:object"] = [{"@id": "kb:elsewhere"}]
+            obj["uco-core:statement"] = "Message, Erfunden"
+    second.write_text(json.dumps(data))
+    s = next(s for s in load_capture(folder).shots if s.case_path == second)
+    assert s.status == HASH_OK and s.caption is None
+    assert "no file record of this screenshot" in s.caption_note
+    out = tmp_path / "out"
+    assert main([str(tmp_path / "in"), "-o", str(out), "--no-ocr", "-q"]) == 0  # the hash is still fine
+    page = next(p for p in out.glob("*.html") if p.name != "index.html").read_text(encoding="utf-8")
+    assert "1 screenshot(s) have an accessibility caption in their .case.json that does not fit them" in page
+    assert "Erfunden" not in page

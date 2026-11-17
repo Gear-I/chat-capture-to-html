@@ -368,12 +368,15 @@ DEVICE = {"id": "5a2b6f0e-1c3d-5e4f-8a9b-0c1d2e3f4a5b", "serial": "TESTSERIAL01"
 
 
 def case_record(file_name: str, size: int, digest: str, start: str, end: str, device: dict,
-                app: str, chat: str, direction: str = "up", tool: str = "UFADE", version: str = "test") -> dict:
+                app: str, chat: str, direction: str = "up", tool: str = "UFADE", version: str = "test",
+                caption: str | None = None, caption_file: str = "kb:screenshot-1") -> dict:
     """A <name>.case.json in the shape UFADE and ALEX write: a CASE/UCO @graph
     with the acquisition, the configured tool, the file and its hash, the
-    device and its operating system. Invented values only."""
+    device and its operating system, and (newer UFADE versions, ``caption``) an
+    annotation with the accessibility caption of the focused element, pointing
+    to the file record ``caption_file``. Invented values only."""
     org = "kb:organization-test-" + device["manufacturer"]
-    return {"@context": {"kb": "urn:test:case:kb:"}, "@graph": [
+    graph = [
         {"@id": "kb:investigativeaction-1", "@type": "case-investigation:InvestigativeAction",
          "uco-core:name": "acquired", "uco-core:description": f"{tool} Screenshot",
          "uco-action:startTime": {"@type": "xsd:dateTime", "@value": start},
@@ -402,19 +405,25 @@ def case_record(file_name: str, size: int, digest: str, start: str, end: str, de
         {"@id": "kb:operating-system-1", "@type": ["uco-observable:OperatingSystem", "uco-observable:Software"],
          "uco-core:name": device["os_name"],
          "uco-core:hasFacet": {"@type": "uco-observable:SoftwareFacet", "uco-observable:version": device["os_version"]}},
-    ]}
+    ]
+    if caption is not None:
+        graph.insert(4, {"@id": "kb:annotation-1", "@type": "uco-core:Annotation",
+                         "uco-core:name": "Accessibility caption of the focused element",
+                         "uco-core:statement": caption, "uco-core:object": [{"@id": caption_file}]})
+    return {"@context": {"kb": "urn:test:case:kb:"}, "@graph": graph}
 
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
          device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False,
-         long: bool = False) -> Path:
+         long: bool = False, captions: bool = False) -> Path:
     """Write a synthetic capture. ``sidecar`` is "txt" (UFADE before 1.0.6),
     "case" (a <name>.case.json only, as ALEX writes) or "both" (as UFADE writes
     from 1.0.6 on). With ``long`` the chat holds a message taller than the
     screen, and the capture skips its top, the way UFADE's focus-based
     scrolling jumps past the start of such a message: the shot before it ends
     above the message, the next one starts inside it, and the two do not
-    overlap."""
+    overlap. With ``captions`` every .case.json but the first holds an invented
+    accessibility caption, as newer UFADE versions write."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
@@ -472,7 +481,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
             (folder / f"{name}.txt").write_text(digest)
         if sidecar in ("case", "both"):
             record = case_record(png.name, png.stat().st_size, digest, started, when.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                 device or DEVICE, app, chat)
+                                 device or DEVICE, app, chat,
+                                 caption=f"Message, Testnachricht {i}, mit Komma, 9:4{i % 10} AM" if captions and i else None)
             (folder / f"{name}.case.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
         when += timedelta(seconds=rnd.choice([0, 1, 1, 2]))
     (out / f"expected_{style}.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1), encoding="utf-8")

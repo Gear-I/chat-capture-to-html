@@ -67,6 +67,8 @@ class Shot:
     device: Device | None = None
     captured_utc: datetime | None = None
     capture: dict = field(default_factory=dict)  # tool, version, method, app, chat, direction from the .case.json
+    caption: str | None = None        # UFADE's accessibility caption of the element focused for this shot
+    caption_note: str = ""            # why a caption in the .case.json could not be used
 
     @property
     def verified(self) -> bool:
@@ -160,18 +162,22 @@ def _value(v) -> str | None:
     return None if v in (None, "") else str(v)
 
 
-def _read_case_json(path: Path, png_name: str) -> tuple[str | None, str, Device | None, datetime | None, dict]:
-    """(recorded SHA-256, problem, device, capture time, capture settings) from
-    a UFADE or ALEX ``<name>.case.json``."""
+CaseInfo = tuple[str | None, str, "Device | None", "datetime | None", dict, tuple[str | None, str]]
+
+
+def _read_case_json(path: Path, png_name: str) -> CaseInfo:
+    """(recorded SHA-256, problem, device, capture time, capture settings,
+    (accessibility caption, caption problem)) from a UFADE or ALEX
+    ``<name>.case.json``."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as e:
-        return None, f"cannot read the .case.json file: {e}", None, None, {}
+        return None, f"cannot read the .case.json file: {e}", None, None, {}, (None, "")
     except json.JSONDecodeError as e:
-        return None, f"the .case.json file is not valid JSON (line {e.lineno})", None, None, {}
+        return None, f"the .case.json file is not valid JSON (line {e.lineno})", None, None, {}, (None, "")
     graph = data.get("@graph") if isinstance(data, dict) else None
     if not isinstance(graph, list):
-        return None, "the .case.json file holds no @graph", None, None, {}
+        return None, "the .case.json file holds no @graph", None, None, {}, (None, "")
     objs = [o for o in graph if isinstance(o, dict)]
     by_id = {o.get("@id"): o for o in objs if o.get("@id")}
 
@@ -210,6 +216,7 @@ def _read_case_json(path: Path, png_name: str) -> tuple[str | None, str, Device 
                     device.os_version = device.os_version or _value(f.get("uco-observable:version"))
 
     files = []  # (file name, SHA-256 or None)
+    file_ids = {}  # @id of each file record -> its file name
     for o in objs:
         if "uco-observable:File" not in _types(o):
             continue
@@ -222,16 +229,43 @@ def _read_case_json(path: Path, png_name: str) -> tuple[str | None, str, Device 
                     if isinstance(h, dict) and str(h.get("uco-types:hashMethod", "")).upper() == "SHA256":
                         digest = _value(h.get("uco-types:hashValue"))
         files.append((name, digest))
+        if o.get("@id"):
+            file_ids[o["@id"]] = name
+    caption = _read_caption(objs, file_ids, png_name)
     mine = [d for n, d in files if n == png_name]
     if not mine:
         others = [n for n, _ in files if n]
         if others:
-            return None, f"the .case.json file describes {others[0]!r}, not this screenshot", device, when, capture
-        return None, "the .case.json file holds no file record", device, when, capture
+            return None, f"the .case.json file describes {others[0]!r}, not this screenshot", device, when, capture, caption
+        return None, "the .case.json file holds no file record", device, when, capture, caption
     digest = mine[0]
     if not digest or not HEX64_RE.fullmatch(digest.strip()):
-        return None, "the .case.json file holds no SHA-256 value", device, when, capture
-    return digest.strip().lower(), "", device, when, capture
+        return None, "the .case.json file holds no SHA-256 value", device, when, capture, caption
+    return digest.strip().lower(), "", device, when, capture, caption
+
+
+def _read_caption(objs: list[dict], file_ids: dict, png_name: str) -> tuple[str | None, str]:
+    """(caption, problem): the accessibility caption UFADE recorded for the
+    element it focused before this screenshot, a ``uco-core:Annotation`` whose
+    ``uco-core:statement`` is the caption and whose ``uco-core:object`` is this
+    screenshot's file record. Kept exactly as written (it is in the device's
+    language, and the message text in it can hold commas, so it is not split)."""
+    found, problems = [], []
+    for o in objs:
+        if "uco-core:Annotation" not in _types(o) or "uco-core:statement" not in o:
+            continue
+        text = _value(o.get("uco-core:statement"))
+        refs = o.get("uco-core:object", [])
+        refs = [r.get("@id") for r in (refs if isinstance(refs, list) else [refs]) if isinstance(r, dict)]
+        names = [file_ids.get(r) for r in refs]
+        if png_name not in names:
+            problems.append("an accessibility caption in the .case.json refers to "
+                            + (repr(next(n for n in names if n)) if any(names) else "no file record of this screenshot"))
+        elif text is not None:
+            found.append(text)
+    if len(found) > 1:
+        problems.append(f"the .case.json holds {len(found)} accessibility captions for this screenshot; all are shown")
+    return (" | ".join(found) if found else None), "; ".join(problems)
 
 
 def load_capture(folder: Path) -> Capture:
@@ -249,10 +283,11 @@ def load_capture(folder: Path) -> Capture:
         case = cases.pop(png.stem, None)
         device = when = None
         capture: dict = {}
+        caption: tuple[str | None, str] = (None, "")
         notes = []
         records: list[tuple[str, str | None]] = []  # (kind, recorded hash or None if unreadable)
         if case is not None:
-            rec, problem, device, when, capture = _read_case_json(case, png.name)
+            rec, problem, device, when, capture, caption = _read_case_json(case, png.name)
             records.append(("case.json", rec))
             if problem:
                 notes.append(problem)
@@ -281,7 +316,8 @@ def load_capture(folder: Path) -> Capture:
                 notes.append("SHA-256 of the PNG does not match the value in the "
                              + " and ".join(f".{k}" for k, _ in records) + " file")
         cap.shots.append(Shot(png, txt, digest, recorded, status, taken, seq, "; ".join(notes),
-                              case_path=case, device=device, captured_utc=when, capture=capture))
+                              case_path=case, device=device, captured_utc=when, capture=capture,
+                              caption=caption[0], caption_note=caption[1]))
 
     cap.orphan_hash_files = sorted(list(txts.values()) + list(cases.values()))
     # Capture order: the .case.json time where every shot has one (UTC), else the

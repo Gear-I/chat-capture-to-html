@@ -123,6 +123,13 @@ def main(argv: list[str] | None = None) -> int:
         dev_warns = cap.device_warnings()
         for w in dev_warns:
             say(f"  ! {w}")
+        n_captions = sum(1 for s in cap.shots if s.caption)
+        if n_captions:
+            say(f"  {n_captions} screenshot(s) carry UFADE's accessibility caption of the focused element; "
+                "shown in the screenshot table")
+        for s in cap.shots:
+            if s.caption_note:
+                say(f"  ! {s.path.name}: {s.caption_note}")
         if bad or cap.orphan_hash_files or dev_warns:
             worst = 2
         target = out_file or out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}.html"

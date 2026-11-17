@@ -106,11 +106,13 @@ UFADE (from the version after 1.0.5) and ALEX write a `<name>.case.json` next to
 - when the record was written (UTC), used as the capture time, and when the capture started;
 - the tool and version, the extraction method and, for Chat capture, the app and chat names entered and the direction (up or down);
 - the device: manufacturer, model, serial number, operating system and version, and the device ID the tool derives from the UDID (UFADE) or serial number (ALEX).
+- in newer UFADE versions, the *accessibility caption of the focused element*: how iOS describes the element UFADE moved the focus to before the screenshot (usually a message: who it is from, its text, and extras such as the time or a reaction), in the device's language. The first screenshot has none.
 
 When a capture has these files:
 
 - Each report shows the device and how it was recorded. The screenshot table says which file each hash was checked against.
 - A chat folder whose screenshots name different devices, or where some name none, gets a warning, and the exit code is `2`.
+- The screenshot table shows each screenshot's accessibility caption exactly as UFADE wrote it, as a reading aid next to the screenshot. It is not read from the screenshot and is not evidence; the screenshot is. A caption that points to another file record than its screenshot is not shown; it is named in the table and the warnings, and printed by the tool.
 - A `.case.json` that describes another file, isn't valid JSON, or holds no SHA-256 is reported as unreadable; a `.case.json` with no PNG is listed with the other orphaned hash files.
 - The capture time comes from the record (UTC), not from the file names (the device's local time, with no time zone).
 - When several chats are processed in one run, `index.html` in the reports folder lists them grouped by device ID, with links to each report.

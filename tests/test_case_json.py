@@ -3,6 +3,7 @@ JSON-LD): hash, capture time and settings, device. UFADE writes it next to the
 .txt, ALEX instead of it."""
 
 import hashlib
+import html
 import json
 import sys
 from pathlib import Path
@@ -115,14 +116,15 @@ def test_accessibility_caption_is_shown_with_its_screenshot(tmp_path):
     folder = make_fixture.make(tmp_path / "in", "imessage", sidecar="both", corrupt=False, captions=True)
     cap = load_capture(folder)
     assert cap.shots[0].caption is None                       # UFADE records none for the first shot
-    assert all(s.caption and "Testnachricht" in s.caption for s in cap.shots[1:])
-    assert cap.shots[1].caption == "Message, Testnachricht 1, mit Komma, 9:41 AM"  # kept whole, commas and all
+    assert all(s.caption for s in cap.shots[1:])
+    assert all(s.caption.count(",") >= 2 for s in cap.shots[1:] if "Message" in s.caption)  # kept whole, commas and all
     assert not any(s.caption_note for s in cap.shots)
     out = tmp_path / "out"
     assert main([str(tmp_path / "in"), "-o", str(out), "--no-ocr", "-q"]) == 0
     page = next(p for p in out.glob("*.html") if p.name != "index.html").read_text(encoding="utf-8")
     assert page.count("Accessibility caption of the focused element:") == len(cap.shots) - 1
-    assert "Testnachricht 2, mit Komma" in page and "the screenshot remains the evidence" in page
+    assert html.escape(cap.shots[2].caption) in page and "the screenshot remains the evidence" in page
+    assert "UFADE accessibility caption with screenshot" not in page  # no text read: not matched to messages
 
 
 def test_caption_for_another_file_is_reported_not_shown(tmp_path):

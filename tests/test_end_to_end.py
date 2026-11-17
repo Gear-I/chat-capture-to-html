@@ -89,3 +89,23 @@ def test_manual_chat_pane_overrides_detection(tmp_path, capsys):
     out = capsys.readouterr().out
     assert f"columns {make_fixture.LIST_W}-{make_fixture.IPAD_W}" in out
     assert "change between shots across the width" in out
+
+
+@needs_ocr
+@pytest.mark.parametrize("style", ["imessage", "whatsapp"])
+def test_caption_is_shown_with_the_message_it_names(tmp_path, style):
+    folder = make_fixture.make(tmp_path, style, corrupt=False, captions=True, sidecar="both")
+    cap = load_capture(folder)
+    res = build_chat(cap, ENGINE)
+    matched = {i: m for m in res.messages for i, _ in m.captions}
+    for i, shot in enumerate(cap.shots):
+        if not shot.caption or "Message" not in shot.caption:
+            assert i not in matched                           # no caption, or a button's: stays with its shot
+            continue
+        assert i in matched, f"caption of shot #{i + 1} not matched"
+        m = matched[i]
+        assert any(s.shot == i for s in m.sources)            # a message in that very screenshot
+        assert set(norm(" ".join(m.lines)).split()) <= set(norm(shot.caption).split()) | {"i"}
+        assert (m.side == "right") == shot.caption.startswith("Your ")
+    assert sum(len(m.captions) for m in res.messages) == len(matched)  # each caption once
+    assert len(matched) >= 2                                  # the test has something to check

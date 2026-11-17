@@ -72,7 +72,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
 
     rows = []
     prev_seg = None
+    caption_msg: dict[int, int] = {}  # shot index -> number of the message its caption was matched to
     for n, m in enumerate(res.messages, 1):
+        for shot_i, _ in getattr(m, "captions", []):
+            caption_msg[shot_i] = n
         if prev_seg is not None and m.segment != prev_seg:
             rows.append('<div class="gap" role="note">Screenshots do not overlap here — messages may be missing.</div>')
         prev_seg = m.segment
@@ -112,6 +115,9 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             f'<div class="foot">{hash_line}</div>'
             + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
             + (f'<div class="foot doubtnote">&#9888; {e(_cut_note(m.cut))}</div>' if getattr(m, "cut", "") else "")
+            + "".join(f'<div class="caption">UFADE accessibility caption with screenshot '
+                      f'<a href="{e(hrefs[si])}" data-shot="{si}">#{si + 1}</a>: \u201c{e(c)}\u201d</div>'
+                      for si, c in getattr(m, "captions", []))
             + '</div>')
 
     n_ok = sum(1 for s in shots if s.status == HASH_OK)
@@ -127,8 +133,9 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         shot_rows.append(
             f'<tr class="{"" if s.status == HASH_OK else "bad"}"><td>#{i + 1}</td>'
             f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a>'
-            + (f'<div class="caption">Accessibility caption of the focused element: \u201c{e(s.caption)}\u201d</div>'
-               if getattr(s, "caption", None) else "")
+            + (f'<div class="caption">Accessibility caption of the focused element: \u201c{e(s.caption)}\u201d'
+               + (f' — matched to message <a href="#m{caption_msg[i]}">#{caption_msg[i]}</a>' if i in caption_msg else "")
+               + '</div>' if getattr(s, "caption", None) else "")
             + (f'<div class="caption bad">{e(s.caption_note)}</div>' if getattr(s, "caption_note", "") else "")
             + '</td>'
             f'<td><code>{s.sha256}</code></td><td><code>{s.recorded_sha256 or "—"}</code>'
@@ -275,7 +282,9 @@ document.addEventListener('keydown',ev=>{{if(ev.key==='Escape')lb.classList.remo
 CAPTION_NOTE = (" The “accessibility caption of the focused element” is what UFADE recorded in the .case.json "
                 "for the element it moved the focus to before that screenshot, as iOS describes it, in the "
                 "device's language. It is shown as UFADE wrote it, as a reading aid: it is not read from the "
-                "screenshot, and the screenshot remains the evidence.")
+                "screenshot, and the screenshot remains the evidence. When OCR is on and a caption holds the "
+                "text of one message in that screenshot, it is also shown with that message; this match is "
+                "made by comparing words, not by position.")
 
 
 def _cut_note(cut: str) -> str:

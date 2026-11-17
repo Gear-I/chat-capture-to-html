@@ -49,6 +49,7 @@ class Message:
     views: list[Source] = field(default_factory=list)  # what to show when no text was read, top to bottom
     doubt: str = ""              # why this may not be a message (seen in fewer shots than show its spot)
     cut: str = ""                # "top", "bottom" or "top and bottom": that edge of the message is in no screenshot
+    captions: list[tuple[int, str]] = field(default_factory=list)  # (shot, UFADE caption) whose text is this message's
 
     @property
     def text(self) -> str:
@@ -403,11 +404,47 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
     for m in messages:
         if not m.lines and engine is not None:
             m.lines = ["[no text recognised — open the screenshot]"]
+    if engine is not None:  # matching a caption to a message needs the message's text
+        _attach_captions(messages, cap)
     return ChatResult(cap, infos, [m for m in allm if not m.is_name_label], segs, top, bottom, header, groups,
                       engine.describe() if engine is not None else "none (--no-ocr)", stripped, warnings, xo, xo + W,
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
                       [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower().replace("|", "i"))
+
+
+def _attach_captions(messages: list[Message], cap: Capture, need: float = 0.7, share: float = 0.3) -> None:
+    """Give each UFADE accessibility caption to the message it describes.
+
+    The caption names the element UFADE focused before a screenshot; when that
+    is a message, its text is in the caption, after who it is from and before
+    extras such as the time. Without the element's position, the message is
+    found by text: among the bubbles in that screenshot, the one whose OCR
+    words are (nearly) all in the caption, and which makes up a fair share of
+    it. A caption that fits no message (a button, say), or two equally well,
+    stays with its screenshot only."""
+    for i, shot in enumerate(cap.shots):
+        if not shot.caption:
+            continue
+        words = _words(shot.caption)
+        pool = set(words)
+        scored = []
+        for m in messages:
+            if m.kind != "bubble" or not m.lines or all(s.shot != i for s in m.sources):
+                continue
+            mine = _words(" ".join(m.lines))
+            if not mine:
+                continue
+            hit = sum(1 for w in mine if w in pool)
+            scored.append((hit / len(mine), hit / len(words), m))
+        good = sorted((s for s in scored if s[0] >= need and s[1] >= share), key=lambda s: (s[0], s[1]), reverse=True)
+        if not good or (len(good) > 1 and good[0][0] - good[1][0] < 0.1 and good[0][1] - good[1][1] < 0.1):
+            continue
+        good[0][2].captions.append((i, shot.caption))
 
 
 def _shows_end(b: Bubble, side: str, img: np.ndarray, top: int, bg, reach: int = 80) -> bool:

@@ -91,6 +91,19 @@ def _cut_where(res) -> list[str]:
     return out
 
 
+def _read_json(parser, path: Path, option: str):
+    """A results or expected-values file, or a one-line error that names it.
+    utf-8-sig also reads files saved by Notepad or PowerShell with a byte-order mark."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        parser.error(f"{option}: no such file: {path}")
+    except (OSError, UnicodeDecodeError) as e:
+        parser.error(f"{option}: cannot read {path}: {e}")
+    except json.JSONDecodeError as e:
+        parser.error(f"{option}: {path} is not valid JSON ({e.msg} at line {e.lineno}, column {e.colno})")
+
+
 def _inside_capture(path: Path, folders: list[Path]) -> bool:
     p = path.resolve()
     return any(p.parent == f or f in p.parents for f in (x.resolve() for x in folders))
@@ -123,8 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         p.error(f"no PNG screenshots under {a.corpus}")
     if a.save and _inside_capture(a.save, folders):
         p.error("--save must not point into a capture folder; keep the evidence folders as UFADE wrote them")
-    baseline = json.loads(a.baseline.read_text(encoding="utf-8")) if a.baseline else None
-    expected = json.loads(a.expected.read_text(encoding="utf-8")) if a.expected else {}
+    baseline = _read_json(p, a.baseline, "--baseline") if a.baseline else None
+    expected = _read_json(p, a.expected, "--expected") if a.expected else {}
 
     print(f"chat-capture-to-html {__version__}, {len(folders)} capture(s)"
           + (f", baseline from {baseline['version']}" if baseline else ""))

@@ -71,3 +71,20 @@ def test_refuses_to_save_into_a_capture_folder(corpus):
     with pytest.raises(SystemExit):
         corpus_check.main([str(corpus), "--save", str(folder / "results.json")])
     assert not (folder / "results.json").exists()
+
+
+def test_missing_or_broken_files_give_a_plain_error(corpus, tmp_path, capsys):
+    two = tmp_path / "two.json"
+    two.write_text('{"a": {"runs": 1}}\n"b": {"runs": 2}}\n', encoding="utf-8")  # an entry pasted after the object
+    for args, words in ((["--baseline", str(tmp_path / "none.json")], "no such file"),
+                        (["--expected", str(two)], "not valid JSON (Extra data at line 2")):
+        with pytest.raises(SystemExit) as e:
+            corpus_check.main([str(corpus)] + args)
+        assert e.value.code == 2 and words in capsys.readouterr().err
+
+
+def test_expected_file_with_byte_order_mark_is_read(corpus, tmp_path, capsys):
+    bom = tmp_path / "expected.json"
+    bom.write_text('{"000000000000": {"runs": 1}}', encoding="utf-8-sig")  # as Notepad may save it
+    assert corpus_check.main([str(corpus), "--expected", str(bom)]) == 1  # read; the ID is just not in the corpus
+    assert "expected, but not in the corpus" in capsys.readouterr().out

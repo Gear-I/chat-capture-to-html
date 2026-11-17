@@ -67,6 +67,7 @@ def summarise(folder: Path, root: Path) -> dict:
         "messages": sum(1 for m in res.messages if m.kind == "bubble"),
         "doubtful": sum(1 for m in res.messages if getattr(m, "doubt", "")),  # marked from 0.5.6 on
         "cut_off": sum(1 for m in res.messages if m.kind == "bubble" and getattr(m, "cut", "")),  # from 0.6.1 on
+        "cut_where": _cut_where(res),  # numbers only; not compared
         "lines": sum(1 for m in res.messages if m.kind != "bubble"),
         "pictures": sum(getattr(i, "pictures", 0) for i in shots),  # counted from 0.5.2 on
         "band": [res.content_top, res.content_bottom],
@@ -74,6 +75,20 @@ def summarise(folder: Path, root: Path) -> dict:
         "placements": [None if i.placement is None else [i.placement.segment, i.placement.y] for i in shots],
         "seconds": round(time.perf_counter() - t0, 1),
     }
+
+
+def _cut_where(res) -> list[str]:
+    """Where each message marked as cut sits, in numbers only: which end is
+    missing, its place in its run of joined shots (1 = oldest) out of how many
+    messages, and its height as a share of the chat area's height."""
+    out = []
+    band = max(1, res.content_bottom - res.content_top)
+    for seg in res.segment_order:
+        run = [m for m in res.messages if m.kind == "bubble" and m.segment == seg]
+        for n, m in enumerate(run, 1):
+            if getattr(m, "cut", ""):
+                out.append(f"{m.cut} {n}/{len(run)} h{(m.gy1 - m.gy0) / band:.2f}")
+    return out
 
 
 def _inside_capture(path: Path, folders: list[Path]) -> bool:
@@ -121,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{r['id']:12}  {r['shots']:5}  {r['hash_problems']:5}  {r['runs']:4}  {r['gaps']:4}  {r['messages']:4}"
               f"  {r['doubtful']:5}  {r['cut_off']:3}  {r['lines']:5}  {r['pictures']:4}  {r['band'][0]}-{r['band'][1]}"
               + (f"  {r['path']}" if a.show_paths else ""))
+        for w in r["cut_where"]:
+            print(f"{'':12}  cut: {w}")
 
     if baseline is not None:
         before = {r["id"]: r for r in baseline["captures"]}

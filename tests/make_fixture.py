@@ -90,6 +90,7 @@ def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False, long=
                         for i in range(1, 49))
         convo = convo[:10] + [("left", text)] + convo[10:]
     long_box = None
+    bubbles = []  # (top, bottom, side, text) of every message bubble, for captions
     boxes = []
     ghost_box = None
     wa = style == "whatsapp"
@@ -160,12 +161,14 @@ def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False, long=
         if wa:
             d.text((x0 + bw - 130, y + bh - 56), stamp, font=fs, fill=(102, 119, 129))
         expected.append({"side": kind, "text": " ".join(lines), "time": stamp if wa else None})
+        bubbles.append((y, y + bh, kind, " ".join(lines)))
         if bh > H:
             long_box = (y, y + bh)
         y += bh
         prev = kind
     tall = tall.crop((0, 0, W, y + 60))
     tall.info["pictures"] = boxes
+    tall.info["bubbles"] = bubbles
     if ghost:
         tall.info["ghost"] = ghost_box
     if long:
@@ -413,6 +416,16 @@ def case_record(file_name: str, size: int, digest: str, start: str, end: str, de
     return {"@context": {"kb": "urn:test:case:kb:"}, "@graph": graph}
 
 
+def _caption(tall, top: int, ch: int, i: int) -> str | None:
+    """The caption of the message nearest the middle of the view [top, top + ch),
+    or of a button when no message is wholly in view."""
+    whole = [b for b in tall.info["bubbles"] if b[0] >= top + 40 and b[1] <= top + ch - 40]
+    if not whole:
+        return "Antworten, Taste"  # the focus can rest on a control, not a message
+    y0, y1, side, text = min(whole, key=lambda b: abs((b[0] + b[1]) / 2 - (top + ch / 2)))
+    return f"{'Your Text Message' if side == 'right' else 'Message'}, {text}, 9:{40 + i} AM"
+
+
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
          device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False,
          long: bool = False, captions: bool = False) -> Path:
@@ -422,8 +435,11 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     screen, and the capture skips its top, the way UFADE's focus-based
     scrolling jumps past the start of such a message: the shot before it ends
     above the message, the next one starts inside it, and the two do not
-    overlap. With ``captions`` every .case.json but the first holds an invented
-    accessibility caption, as newer UFADE versions write."""
+    overlap. With ``captions`` every .case.json but the first holds an
+    accessibility caption, as newer UFADE versions write: that of the message
+    nearest the middle of the screenshot, in the form iOS uses ("Your Text
+    Message, <text>, <time>" for the right-hand side, "Message, <text>, <time>"
+    for the left)."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
@@ -482,7 +498,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
         if sidecar in ("case", "both"):
             record = case_record(png.name, png.stat().st_size, digest, started, when.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                  device or DEVICE, app, chat,
-                                 caption=f"Message, Testnachricht {i}, mit Komma, 9:4{i % 10} AM" if captions and i else None)
+                                 caption=_caption(tall, top, ch, i) if captions and i else None)
             (folder / f"{name}.case.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
         when += timedelta(seconds=rnd.choice([0, 1, 1, 2]))
     (out / f"expected_{style}.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1), encoding="utf-8")

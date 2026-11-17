@@ -24,8 +24,7 @@ def test_long_message_is_one_message_marked_cut_at_the_top(tmp_path, style):
     assert len(long) == 1                             # its pieces from several shots are one message
     assert long[0].cut == "top"
     assert len(res.segment_order) == 2                # the skipped top leaves a gap, shown as such
-    if style == "imessage":                           # every other message ends inside a screenshot
-        assert [m for m in res.messages if m.cut] == long
+    assert [m for m in res.messages if m.cut] == long  # a short one sliced at a run's edge is not marked
 
 
 def test_report_and_cli_say_the_top_was_not_captured(tmp_path, capsys):

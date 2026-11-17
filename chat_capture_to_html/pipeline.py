@@ -315,7 +315,13 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                        for a in members if inst[a][3] <= gy0 + 4)
         bottom_seen = any(_shows_end(inst[a][1], "bottom", images[idx[inst[a][0]]], top, bgs[inst[a][0]])
                           for a in members if inst[a][4] >= gy1 - 4)
-        msg.cut = " and ".join(x for x, seen in (("top", top_seen), ("bottom", bottom_seen)) if not seen)
+        # Only a message taller than the chat area (cut at both ends in some
+        # shot) is marked. A shorter one is whole in some shot unless it sits
+        # at the start or end of a run, where the gap marker or the start of
+        # the capture already says that the chat goes on beyond.
+        taller = any(inst[a][1].cut_top and inst[a][1].cut_bottom for a in members)
+        msg.cut = "" if not taller else " and ".join(
+            x for x, seen in (("top", top_seen), ("bottom", bottom_seen)) if not seen)
         for a in sorted(chosen, key=lambda a: inst[a][3]):
             k, b, _, _, _ = inst[a]
             msg.views.append(Source(idx[k], (b.x0 + xo, b.y0 + top, b.x1 + xo, b.y1 + top), b.complete))

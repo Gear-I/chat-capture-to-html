@@ -42,7 +42,7 @@ class Settings:
 def validate(s: Settings) -> str | None:
     """A message for the user when the settings cannot run, else None."""
     if not s.capture.strip():
-        return "Choose the capture folder (UFADE's screenshots folder, or one chat folder in it)."
+        return "Choose the capture folder (the capture's screenshots folder, or one chat folder in it)."
     cap = Path(s.capture).expanduser()
     if not cap.is_dir():
         return f"The capture folder does not exist: {cap}"
@@ -54,7 +54,7 @@ def validate(s: Settings) -> str | None:
     except OSError as e:
         return f"Cannot use that folder: {e}"
     if out_r == cap_r or cap_r in out_r.parents:
-        return "Put the reports outside the capture folder: the evidence folder must stay as UFADE wrote it."
+        return "Put the reports outside the capture folder: the evidence folder must stay as UFADE or ALEX wrote it."
     if s.lang.strip() and not s.no_ocr and not re.fullmatch(r"[A-Za-z_]+(\+[A-Za-z_]+)*", s.lang.strip()):
         return ("OCR languages: Tesseract language codes joined by +, for example deu+eng "
                 "(the names of the .traineddata files in Tesseract's tessdata folder).")
@@ -81,7 +81,7 @@ def build_args(s: Settings) -> list[str]:
 
 def capture_summary(folder: Path) -> str:
     """What the capture folder holds, for the window's side panel: chats,
-    screenshots, hash checks, devices and UFADE captions. Only reads the
+    screenshots, hash checks, devices and accessibility captions. Only reads the
     files (it hashes every screenshot, as the tool does)."""
     from .capture import HASH_OK, find_capture_folders, load_capture
     folder = Path(folder).expanduser()
@@ -114,7 +114,7 @@ def capture_summary(folder: Path) -> str:
         lines.append(f"  ! {len(devices)} different devices")
     captions = sum(1 for s in shots if s.caption)
     if captions:
-        lines += ["", "UFADE captions", f"  {captions} of {len(shots)} screenshots"]
+        lines += ["", "Accessibility captions", f"  {captions} of {len(shots)} screenshots"]
     return "\n".join(lines)
 
 
@@ -160,6 +160,32 @@ def run_tool(args: list[str], q: "queue.Queue[tuple[str, object]]") -> None:
     q.put(("done", code))
 
 
+def set_icon(root) -> None:
+    """The logo as the window's icon, on every system.
+
+    Windows: the .ico, whose sizes give a sharp icon in the title bar and the
+    taskbar. Linux and macOS: the PNGs from 512 down to 16 pixels, so the title
+    bar, the taskbar or Alt-Tab view and the macOS Dock each get a sharp size
+    (the largest first: macOS uses it for the Dock)."""
+    import tkinter as tk
+    here = Path(__file__).parent
+    ico = here / "logo.ico"
+    if root.tk.call("tk", "windowingsystem") == "win32" and ico.exists():
+        with contextlib.suppress(tk.TclError):
+            root.iconbitmap(default=str(ico))
+            return
+    images = []
+    for size in (512, 256, 64, 32, 16):
+        png = here / f"logo_{size}.png"
+        if png.exists():
+            with contextlib.suppress(tk.TclError):
+                images.append(tk.PhotoImage(master=root, file=str(png)))
+    if images:
+        with contextlib.suppress(tk.TclError):
+            root.iconphoto(True, *images)
+        root._logo_images = images  # keep them alive as long as the window
+
+
 def build_window(root):
     """Lay out the window on ``root`` and return its parts (for main and tests)."""
     import tkinter as tk
@@ -168,10 +194,7 @@ def build_window(root):
 
     root.title(f"chat-capture-to-html {__version__}")
     root.minsize(640, 520)
-    png = Path(__file__).with_name("logo_64.png")
-    if png.exists():
-        with contextlib.suppress(tk.TclError):
-            root.iconphoto(True, tk.PhotoImage(file=str(png)))
+    set_icon(root)
 
     capture = tk.StringVar()
     output = tk.StringVar(value=str(Path.home() / "chat-capture-reports"))
@@ -195,7 +218,7 @@ def build_window(root):
                 var.set(d)
         ttk.Button(frm, text="Browse…", command=pick).grid(row=r, column=2)
 
-    folder_row(0, "Capture folder", capture, "UFADE screenshots folder, or one chat folder in it")
+    folder_row(0, "Capture folder", capture, "The capture's screenshots folder, or one chat folder in it")
     folder_row(1, "Reports folder", output, "Where to write the reports (not inside the capture)")
 
     opts = ttk.LabelFrame(frm, text="Options", padding=8)
@@ -301,7 +324,7 @@ def main() -> int:
     except ImportError:
         print("Tkinter is not available. On Linux install python3-tk (e.g. sudo apt install python3-tk).")
         return 1
-    try:  # the UFADE-style window, when CustomTkinter is installed (pip install .[gui])
+    try:  # the dark window, when CustomTkinter is installed (pip install .[gui])
         from .gui_ctk import run_window
     except ImportError:
         run_window = None

@@ -81,7 +81,7 @@ or `py -m chat_capture_to_html.gui` on Windows, `python3 -m chat_capture_to_html
 
 It uses Tkinter, which comes with Python on Windows and macOS. On Linux, install it first, for example `sudo apt install python3-tk`.
 
-With CustomTkinter installed, the window takes after UFADE's: dark, with a side panel, one step at a time.
+With CustomTkinter installed, the window is dark, with a side panel, and goes one step at a time; its look follows UFADE's.
 
 ```bash
 py -m pip install .[gui]
@@ -90,7 +90,7 @@ py -m pip install .[gui]
 - **Step 1:** choose the capture folder and the reports folder.
 - **Step 2:** set the same options as above, with **Back** to change the folders.
 - **Step 3:** the run, with its log, the result and the buttons to open the report.
-- **The side panel:** shows what the chosen capture holds: the chats, how many screenshots there are and how many verify, the device from the `.case.json` files, and how many screenshots carry a UFADE caption. It only reads the files; it hashes every screenshot, so it takes a moment on a large capture.
+- **The side panel:** shows what the chosen capture holds: the chats, how many screenshots there are and how many verify, the device from the `.case.json` files, and how many screenshots carry an accessibility caption. It only reads the files; it hashes every screenshot, so it takes a moment on a large capture.
 - **Without CustomTkinter:** the plain window above opens. The report is the same either way.
 
 CustomTkinter is an optional extra so the command line keeps its three dependencies.
@@ -143,6 +143,7 @@ Captures with only `.txt` files work as before.
 - Alignment prefers a gap over a guess: a pair of shots that only look alike, or that match equally well in two places, is not merged, so a message can then appear twice on either side of the gap marker.
 - On iOS 26 the strip just under the floating title is not read: messages there are blurred or partly covered. They are read from the next shot, where they sit further down; only in the oldest shot of a chat can a message at the very top be left out. It is still visible in the linked screenshot.
 - A message taller than the screen can be captured only in part: UFADE's scrolling moves from message to message, and real scrolling inside a message needs iOS 27. Such a message is marked where its top or bottom is in no screenshot, and the part not captured cannot be recovered from these screenshots.
+- Captures made with ALEX (Android) have not been tested. Their `.case.json` files are read and checked like UFADE's, but lining up the shots and finding bubbles were developed on iPhone and iPad screenshots only.
 - Sender is decided by side; a bubble colour on both sides is flagged, not corrected.
 - Detecting the header assumes at least two screenshots of the same size. Shots of a different size are skipped and reported.
 
@@ -188,9 +189,18 @@ When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE
 
 UFADE can write the accessibility text of the element it focused before a screenshot (`uco-core:statement`, in the device's language) into the `.case.json`. `scripts/statement_check.py CAPTURE` shows where each file holds it, its length and how many comma-separated parts it has, without printing the text; `--show` prints the text too, for your own eyes only. The files are only read.
 
-## Credits
+## Acknowledgements
 
-The captures this tool reads are made with [UFADE](https://github.com/prosch88/UFADE) (and [ALEX](https://github.com/prosch88/ALEX)) by Christian Peter (prosch88). He added the `.case.json` records and the accessibility captions that the tool uses, and the window's look follows UFADE's. chat-capture-to-html contains none of UFADE's code.
+This script utilizes the following projects:
+
+- [UFADE](https://github.com/prosch88/UFADE) and [ALEX](https://github.com/prosch88/ALEX) by Christian Peter (prosch88): they make the captures this tool reads, with the `.case.json` records and the accessibility captions it uses, and the window's look follows UFADE's. chat-capture-to-html contains none of their code.
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract): reads the text in the screenshots.
+- [RapidOCR](https://github.com/RapidAI/RapidOCR): the fallback OCR engine (optional).
+- [NumPy](https://numpy.org), [Pillow](https://python-pillow.org) and [OpenCV](https://opencv.org): read the screenshots, find the bubbles and line up the shots.
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): the dark window (optional), built on Tkinter from the Python standard library.
+- [pytest](https://pytest.org): the tests.
+
+Their licences are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

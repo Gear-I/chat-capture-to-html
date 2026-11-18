@@ -1,13 +1,13 @@
-"""The window in the style of UFADE's: dark, with a side panel and one step at a time.
+"""The dark window, with a side panel and one step at a time (its look follows UFADE's).
 
 Used by ``chat-capture-to-html-gui`` when CustomTkinter is installed
 (``pip install .[gui]``); without it the plain window in gui.py opens. Both
 build the same command line and run the same tool, so the report is exactly
 what the command would produce.
 
-It is always dark, like UFADE. Steps: 1 choose the capture and the reports folder, 2 options, 3 run and
+It is always dark. Steps: 1 choose the capture and the reports folder, 2 options, 3 run and
 result. The side panel shows what the chosen capture holds (screenshots,
-hash checks, device, UFADE captions), read from the files without changing them.
+hash checks, device, accessibility captions), read from the files without changing them.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from . import __version__
-from .gui import RESULTS, Settings, build_args, capture_summary, new_reports, run_tool, validate
+from .gui import RESULTS, Settings, build_args, capture_summary, new_reports, run_tool, set_icon, validate
 
 SIDE = "#2c353e"       # side panel
 MAIN = "#212121"       # main area
@@ -39,11 +39,7 @@ class App(ctk.CTk):
         self.title(f"chat-capture-to-html {__version__}")
         self.geometry("1040x640")
         self.minsize(900, 560)
-        png = Path(__file__).with_name("logo_64.png")
-        if png.exists():
-            with contextlib.suppress(Exception):
-                import tkinter as tk
-                self.iconphoto(True, tk.PhotoImage(file=str(png)))
+        set_icon(self)  # on Windows through iconbitmap, which also keeps CustomTkinter's own icon away
         self.font = ctk.CTkFont(size=14)
         self.big = ctk.CTkFont(size=15, weight="bold")
         self.mono = ctk.CTkFont(family="Consolas" if sys.platform == "win32" else "monospace", size=13)
@@ -60,12 +56,19 @@ class App(ctk.CTk):
         side.grid(row=0, column=0, sticky="ns")
         side.grid_propagate(False)
         side.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(side, text=f"chat-capture-to-html\nversion {__version__}", font=self.big, text_color=INFO,
-                     justify="left", anchor="w").grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        logo = None
+        big_png = Path(__file__).with_name("logo_256.png")
+        if big_png.exists():
+            with contextlib.suppress(Exception):
+                from PIL import Image
+                logo = ctk.CTkImage(Image.open(big_png), size=(48, 48))
+        ctk.CTkLabel(side, text=f"  chat-capture-to-html\n  version {__version__}", image=logo, compound="left",
+                     font=self.big, text_color=INFO, justify="left", anchor="w").grid(
+            row=0, column=0, sticky="ew", padx=14, pady=(16, 8))
         self.info = ctk.CTkTextbox(side, width=270, fg_color=SIDE, text_color=INFO, font=self.mono, wrap="none",
                                    activate_scrollbars=True, corner_radius=0)
         self.info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
-        ctk.CTkLabel(side, text="For captures made with UFADE\nby Christian Peter (prosch88)", font=self.font,
+        ctk.CTkLabel(side, text="For captures made with UFADE and ALEX\nby Christian Peter (prosch88)", font=self.font,
                      text_color=FAINT, justify="left", anchor="w").grid(row=2, column=0, sticky="ew", padx=16,
                                                                          pady=(0, 14))
         self._set_info("No capture chosen yet.")
@@ -144,8 +147,8 @@ class App(ctk.CTk):
                 self._summarise()
 
         for r, (label, var, title, note) in enumerate((
-                ("Capture folder", cap, "UFADE screenshots folder, or one chat folder in it",
-                 "UFADE's screenshots folder, or one chat folder in it. It is only read."),
+                ("Capture folder", cap, "The capture's screenshots folder, or one chat folder in it",
+                 "The capture's screenshots folder (from UFADE or ALEX), or one chat folder in it. It is only read."),
                 ("Reports folder", out, "Where to write the reports (not inside the capture)",
                  "Where the reports go. Not inside the capture folder."))):
             self._row(r * 2, label, lambda v=var, t=title: pick(v, t), note)

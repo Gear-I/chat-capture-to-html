@@ -160,6 +160,21 @@ def run_tool(args: list[str], q: "queue.Queue[tuple[str, object]]") -> None:
     q.put(("done", code))
 
 
+def set_icon(root) -> None:
+    """The logo as the window's icon: the .ico on Windows, whose sizes give a
+    sharp icon in the title bar and the taskbar, and the PNG elsewhere."""
+    import tkinter as tk
+    here = Path(__file__).parent
+    ico, png = here / "logo.ico", here / "logo_64.png"
+    if root.tk.call("tk", "windowingsystem") == "win32" and ico.exists():
+        with contextlib.suppress(tk.TclError):
+            root.iconbitmap(default=str(ico))
+            return
+    if png.exists():
+        with contextlib.suppress(tk.TclError):
+            root.iconphoto(True, tk.PhotoImage(file=str(png)))
+
+
 def build_window(root):
     """Lay out the window on ``root`` and return its parts (for main and tests)."""
     import tkinter as tk
@@ -168,10 +183,7 @@ def build_window(root):
 
     root.title(f"chat-capture-to-html {__version__}")
     root.minsize(640, 520)
-    png = Path(__file__).with_name("logo_64.png")
-    if png.exists():
-        with contextlib.suppress(tk.TclError):
-            root.iconphoto(True, tk.PhotoImage(file=str(png)))
+    set_icon(root)
 
     capture = tk.StringVar()
     output = tk.StringVar(value=str(Path.home() / "chat-capture-reports"))

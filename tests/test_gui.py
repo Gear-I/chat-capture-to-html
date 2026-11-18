@@ -124,3 +124,13 @@ def test_ufade_style_window_runs_and_reports(tmp_path):
         assert "hash-verified" in app.info.get("1.0", "end")
     finally:
         app.destroy()
+
+
+def test_logo_files_ship_with_the_package():
+    import chat_capture_to_html
+    here = Path(chat_capture_to_html.__file__).parent
+    shipped = next(line for line in (here.parent / "pyproject.toml").read_text(encoding="utf-8").splitlines()
+                   if line.startswith("chat_capture_to_html = ["))  # tomllib needs Python 3.11
+    for name in ("logo.ico", "logo_64.png", "logo_256.png"):
+        assert (here / name).is_file() and name in shipped
+    assert (here / "logo.ico").read_bytes() == (here.parent / "assets" / "logo.ico").read_bytes()

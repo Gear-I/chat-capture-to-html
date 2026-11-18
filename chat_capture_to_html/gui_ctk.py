@@ -24,7 +24,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from . import __version__
-from .gui import RESULTS, Settings, build_args, capture_summary, new_reports, run_tool, validate
+from .gui import RESULTS, Settings, build_args, capture_summary, new_reports, run_tool, set_icon, validate
 
 SIDE = "#2c353e"       # side panel
 MAIN = "#212121"       # main area
@@ -39,11 +39,7 @@ class App(ctk.CTk):
         self.title(f"chat-capture-to-html {__version__}")
         self.geometry("1040x640")
         self.minsize(900, 560)
-        png = Path(__file__).with_name("logo_64.png")
-        if png.exists():
-            with contextlib.suppress(Exception):
-                import tkinter as tk
-                self.iconphoto(True, tk.PhotoImage(file=str(png)))
+        set_icon(self)  # on Windows through iconbitmap, which also keeps CustomTkinter's own icon away
         self.font = ctk.CTkFont(size=14)
         self.big = ctk.CTkFont(size=15, weight="bold")
         self.mono = ctk.CTkFont(family="Consolas" if sys.platform == "win32" else "monospace", size=13)
@@ -60,8 +56,15 @@ class App(ctk.CTk):
         side.grid(row=0, column=0, sticky="ns")
         side.grid_propagate(False)
         side.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(side, text=f"chat-capture-to-html\nversion {__version__}", font=self.big, text_color=INFO,
-                     justify="left", anchor="w").grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        logo = None
+        big_png = Path(__file__).with_name("logo_256.png")
+        if big_png.exists():
+            with contextlib.suppress(Exception):
+                from PIL import Image
+                logo = ctk.CTkImage(Image.open(big_png), size=(48, 48))
+        ctk.CTkLabel(side, text=f"  chat-capture-to-html\n  version {__version__}", image=logo, compound="left",
+                     font=self.big, text_color=INFO, justify="left", anchor="w").grid(
+            row=0, column=0, sticky="ew", padx=14, pady=(16, 8))
         self.info = ctk.CTkTextbox(side, width=270, fg_color=SIDE, text_color=INFO, font=self.mono, wrap="none",
                                    activate_scrollbars=True, corner_radius=0)
         self.info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))

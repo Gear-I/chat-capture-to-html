@@ -189,9 +189,18 @@ When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE
 
 UFADE can write the accessibility text of the element it focused before a screenshot (`uco-core:statement`, in the device's language) into the `.case.json`. `scripts/statement_check.py CAPTURE` shows where each file holds it, its length and how many comma-separated parts it has, without printing the text; `--show` prints the text too, for your own eyes only. The files are only read.
 
-## Credits
+## Acknowledgements
 
-The captures this tool reads are made with [UFADE](https://github.com/prosch88/UFADE) (and [ALEX](https://github.com/prosch88/ALEX)) by Christian Peter (prosch88). He added the `.case.json` records and the accessibility captions that the tool uses, and the window's look follows UFADE's. chat-capture-to-html contains none of UFADE's code.
+This script utilizes the following projects:
+
+- [UFADE](https://github.com/prosch88/UFADE) and [ALEX](https://github.com/prosch88/ALEX) by Christian Peter (prosch88): they make the captures this tool reads, with the `.case.json` records and the accessibility captions it uses, and the window's look follows UFADE's. chat-capture-to-html contains none of their code.
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract): reads the text in the screenshots.
+- [RapidOCR](https://github.com/RapidAI/RapidOCR): the fallback OCR engine (optional).
+- [NumPy](https://numpy.org), [Pillow](https://python-pillow.org) and [OpenCV](https://opencv.org): read the screenshots, find the bubbles and line up the shots.
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter): the dark window (optional), built on Tkinter from the Python standard library.
+- [pytest](https://pytest.org): the tests.
+
+Their licences are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

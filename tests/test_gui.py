@@ -129,8 +129,22 @@ def test_ufade_style_window_runs_and_reports(tmp_path):
 def test_logo_files_ship_with_the_package():
     import chat_capture_to_html
     here = Path(chat_capture_to_html.__file__).parent
-    shipped = next(line for line in (here.parent / "pyproject.toml").read_text(encoding="utf-8").splitlines()
-                   if line.startswith("chat_capture_to_html = ["))  # tomllib needs Python 3.11
-    for name in ("logo.ico", "logo_64.png", "logo_256.png"):
+    text = (here.parent / "pyproject.toml").read_text(encoding="utf-8")  # tomllib needs Python 3.11
+    shipped = text[text.index("chat_capture_to_html = ["):].split("]", 1)[0]
+    for name in ("logo.ico", "logo_16.png", "logo_32.png", "logo_64.png", "logo_256.png", "logo_512.png"):
         assert (here / name).is_file() and name in shipped
     assert (here / "logo.ico").read_bytes() == (here.parent / "assets" / "logo.ico").read_bytes()
+
+
+def test_window_icon_has_every_size_on_linux():
+    tk = pytest.importorskip("tkinter")
+    if os.name == "nt" or not os.environ.get("DISPLAY"):
+        pytest.skip("needs an X display")
+    from chat_capture_to_html.gui import set_icon
+    root = tk.Tk()
+    try:
+        set_icon(root)
+        assert [(i.width(), i.height()) for i in root._logo_images] == [(512, 512), (256, 256), (64, 64), (32, 32),
+                                                                         (16, 16)]
+    finally:
+        root.destroy()

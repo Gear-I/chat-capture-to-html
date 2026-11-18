@@ -161,18 +161,29 @@ def run_tool(args: list[str], q: "queue.Queue[tuple[str, object]]") -> None:
 
 
 def set_icon(root) -> None:
-    """The logo as the window's icon: the .ico on Windows, whose sizes give a
-    sharp icon in the title bar and the taskbar, and the PNG elsewhere."""
+    """The logo as the window's icon, on every system.
+
+    Windows: the .ico, whose sizes give a sharp icon in the title bar and the
+    taskbar. Linux and macOS: the PNGs from 512 down to 16 pixels, so the title
+    bar, the taskbar or Alt-Tab view and the macOS Dock each get a sharp size
+    (the largest first: macOS uses it for the Dock)."""
     import tkinter as tk
     here = Path(__file__).parent
-    ico, png = here / "logo.ico", here / "logo_64.png"
+    ico = here / "logo.ico"
     if root.tk.call("tk", "windowingsystem") == "win32" and ico.exists():
         with contextlib.suppress(tk.TclError):
             root.iconbitmap(default=str(ico))
             return
-    if png.exists():
+    images = []
+    for size in (512, 256, 64, 32, 16):
+        png = here / f"logo_{size}.png"
+        if png.exists():
+            with contextlib.suppress(tk.TclError):
+                images.append(tk.PhotoImage(master=root, file=str(png)))
+    if images:
         with contextlib.suppress(tk.TclError):
-            root.iconphoto(True, tk.PhotoImage(file=str(png)))
+            root.iconphoto(True, *images)
+        root._logo_images = images  # keep them alive as long as the window
 
 
 def build_window(root):

@@ -27,4 +27,5 @@ chat-capture-to-html-gui = "chat_capture_to_html.gui:main"
 packages = ["chat_capture_to_html"]
 
 [tool.setuptools.package-data]
-chat_capture_to_html = ["logo.svg", "logo_64.png", "logo_256.png", "logo.ico"]
+chat_capture_to_html = ["logo.svg", "logo.ico", "logo_16.png", "logo_32.png", "logo_64.png", "logo_256.png",
+                        "logo_512.png"]

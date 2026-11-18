@@ -29,6 +29,19 @@ def test_build_args():
     assert build_args(s) == ["/c", "-o", "/o", "--no-ocr", "--diagnose", "--verified-only", "--me", "Owner",
                              "--them", "Anna"]
     assert build_args(Settings("/c", "/o")) == ["/c", "-o", "/o"]
+    assert build_args(Settings("/c", "/o", lang=" deu+eng ")) == ["/c", "-o", "/o", "--lang", "deu+eng"]
+    assert build_args(Settings("/c", "/o", no_ocr=True, lang="deu")) == ["/c", "-o", "/o", "--no-ocr"]  # no OCR: no language
+
+
+def test_validate_checks_the_ocr_languages(tmp_path):
+    cap = tmp_path / "screenshots"
+    cap.mkdir()
+    out = str(tmp_path / "out")
+    assert validate(Settings(str(cap), out, lang="deu+eng")) is None
+    assert validate(Settings(str(cap), out, lang="chi_sim")) is None
+    assert "language codes" in validate(Settings(str(cap), out, lang="deu, eng"))
+    assert "language codes" in validate(Settings(str(cap), out, lang="deu+"))
+    assert validate(Settings(str(cap), out, no_ocr=True, lang="deu, eng")) is None  # not used without OCR
 
 
 def test_run_tool_streams_lines_and_exit_code(tmp_path):

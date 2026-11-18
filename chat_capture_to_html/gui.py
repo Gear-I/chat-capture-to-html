@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import queue
+import re
 import threading
 import time
 import webbrowser
@@ -35,6 +36,7 @@ class Settings:
     verified_only: bool = False
     me: str = "Device owner"
     them: str = ""
+    lang: str = ""          # Tesseract languages, e.g. deu+eng; empty: the tool's default
 
 
 def validate(s: Settings) -> str | None:
@@ -53,6 +55,9 @@ def validate(s: Settings) -> str | None:
         return f"Cannot use that folder: {e}"
     if out_r == cap_r or cap_r in out_r.parents:
         return "Put the reports outside the capture folder: the evidence folder must stay as UFADE wrote it."
+    if s.lang.strip() and not s.no_ocr and not re.fullmatch(r"[A-Za-z_]+(\+[A-Za-z_]+)*", s.lang.strip()):
+        return ("OCR languages: Tesseract language codes joined by +, for example deu+eng "
+                "(the names of the .traineddata files in Tesseract's tessdata folder).")
     return None
 
 
@@ -69,6 +74,8 @@ def build_args(s: Settings) -> list[str]:
         args += ["--me", s.me.strip()]
     if s.them.strip():
         args += ["--them", s.them.strip()]
+    if s.lang.strip() and not s.no_ocr:
+        args += ["--lang", s.lang.strip()]
     return args
 
 
@@ -130,7 +137,7 @@ def build_window(root):
     capture = tk.StringVar()
     output = tk.StringVar(value=str(Path.home() / "chat-capture-reports"))
     no_ocr, diagnose, verified = tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar()
-    me, them = tk.StringVar(value="Device owner"), tk.StringVar()
+    me, them, lang = tk.StringVar(value="Device owner"), tk.StringVar(), tk.StringVar()
     status = tk.StringVar(value="Choose the capture folder, then Run.")
     q: "queue.Queue[tuple[str, object]]" = queue.Queue()
     state = {"started": 0.0, "reports": []}
@@ -166,6 +173,10 @@ def build_window(root):
     ttk.Label(opts, text="Left-hand bubbles").grid(row=4, column=0, sticky="w")
     ttk.Entry(opts, textvariable=them).grid(row=4, column=1, sticky="ew")
     ttk.Label(opts, text="(empty: the chat folder name)", foreground="gray").grid(row=5, column=1, sticky="w")
+    ttk.Label(opts, text="OCR languages").grid(row=6, column=0, sticky="w", pady=(6, 0))
+    ttk.Entry(opts, textvariable=lang).grid(row=6, column=1, sticky="ew", pady=(6, 0))
+    ttk.Label(opts, text="(empty: German and English, where installed; e.g. eng, or deu+eng)",
+              foreground="gray").grid(row=7, column=1, sticky="w")
 
     buttons = ttk.Frame(frm)
     buttons.grid(row=3, column=0, columnspan=3, sticky="ew")
@@ -211,7 +222,8 @@ def build_window(root):
         root.after(100, poll)
 
     def run() -> None:
-        s = Settings(capture.get(), output.get(), no_ocr.get(), diagnose.get(), verified.get(), me.get(), them.get())
+        s = Settings(capture.get(), output.get(), no_ocr.get(), diagnose.get(), verified.get(), me.get(), them.get(),
+                     lang.get())
         problem = validate(s)
         if problem:
             messagebox.showwarning("chat-capture-to-html", problem)
@@ -240,7 +252,7 @@ def build_window(root):
     open_btn.configure(command=open_report)
     folder_btn.configure(command=open_folder)
     return {"capture": capture, "output": output, "no_ocr": no_ocr, "diagnose": diagnose, "verified": verified,
-            "me": me, "them": them, "status": status, "log": log, "run": run, "run_button": run_btn,
+            "me": me, "them": them, "lang": lang, "status": status, "log": log, "run": run, "run_button": run_btn,
             "open_button": open_btn, "state": state}
 
 

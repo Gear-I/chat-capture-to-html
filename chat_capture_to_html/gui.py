@@ -42,7 +42,7 @@ class Settings:
 def validate(s: Settings) -> str | None:
     """A message for the user when the settings cannot run, else None."""
     if not s.capture.strip():
-        return "Choose the capture folder (UFADE's screenshots folder, or one chat folder in it)."
+        return "Choose the capture folder (the capture's screenshots folder, or one chat folder in it)."
     cap = Path(s.capture).expanduser()
     if not cap.is_dir():
         return f"The capture folder does not exist: {cap}"
@@ -54,7 +54,7 @@ def validate(s: Settings) -> str | None:
     except OSError as e:
         return f"Cannot use that folder: {e}"
     if out_r == cap_r or cap_r in out_r.parents:
-        return "Put the reports outside the capture folder: the evidence folder must stay as UFADE wrote it."
+        return "Put the reports outside the capture folder: the evidence folder must stay as UFADE or ALEX wrote it."
     if s.lang.strip() and not s.no_ocr and not re.fullmatch(r"[A-Za-z_]+(\+[A-Za-z_]+)*", s.lang.strip()):
         return ("OCR languages: Tesseract language codes joined by +, for example deu+eng "
                 "(the names of the .traineddata files in Tesseract's tessdata folder).")
@@ -81,7 +81,7 @@ def build_args(s: Settings) -> list[str]:
 
 def capture_summary(folder: Path) -> str:
     """What the capture folder holds, for the window's side panel: chats,
-    screenshots, hash checks, devices and UFADE captions. Only reads the
+    screenshots, hash checks, devices and accessibility captions. Only reads the
     files (it hashes every screenshot, as the tool does)."""
     from .capture import HASH_OK, find_capture_folders, load_capture
     folder = Path(folder).expanduser()
@@ -114,7 +114,7 @@ def capture_summary(folder: Path) -> str:
         lines.append(f"  ! {len(devices)} different devices")
     captions = sum(1 for s in shots if s.caption)
     if captions:
-        lines += ["", "UFADE captions", f"  {captions} of {len(shots)} screenshots"]
+        lines += ["", "Accessibility captions", f"  {captions} of {len(shots)} screenshots"]
     return "\n".join(lines)
 
 
@@ -218,7 +218,7 @@ def build_window(root):
                 var.set(d)
         ttk.Button(frm, text="Browse…", command=pick).grid(row=r, column=2)
 
-    folder_row(0, "Capture folder", capture, "UFADE screenshots folder, or one chat folder in it")
+    folder_row(0, "Capture folder", capture, "The capture's screenshots folder, or one chat folder in it")
     folder_row(1, "Reports folder", output, "Where to write the reports (not inside the capture)")
 
     opts = ttk.LabelFrame(frm, text="Options", padding=8)
@@ -324,7 +324,7 @@ def main() -> int:
     except ImportError:
         print("Tkinter is not available. On Linux install python3-tk (e.g. sudo apt install python3-tk).")
         return 1
-    try:  # the UFADE-style window, when CustomTkinter is installed (pip install .[gui])
+    try:  # the dark window, when CustomTkinter is installed (pip install .[gui])
         from .gui_ctk import run_window
     except ImportError:
         run_window = None

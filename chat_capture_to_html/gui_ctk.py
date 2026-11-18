@@ -1,13 +1,13 @@
-"""The window in the style of UFADE's: dark, with a side panel and one step at a time.
+"""The dark window, with a side panel and one step at a time (its look follows UFADE's).
 
 Used by ``chat-capture-to-html-gui`` when CustomTkinter is installed
 (``pip install .[gui]``); without it the plain window in gui.py opens. Both
 build the same command line and run the same tool, so the report is exactly
 what the command would produce.
 
-It is always dark, like UFADE. Steps: 1 choose the capture and the reports folder, 2 options, 3 run and
+It is always dark. Steps: 1 choose the capture and the reports folder, 2 options, 3 run and
 result. The side panel shows what the chosen capture holds (screenshots,
-hash checks, device, UFADE captions), read from the files without changing them.
+hash checks, device, accessibility captions), read from the files without changing them.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ class App(ctk.CTk):
         self.info = ctk.CTkTextbox(side, width=270, fg_color=SIDE, text_color=INFO, font=self.mono, wrap="none",
                                    activate_scrollbars=True, corner_radius=0)
         self.info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
-        ctk.CTkLabel(side, text="For captures made with UFADE\nby Christian Peter (prosch88)", font=self.font,
+        ctk.CTkLabel(side, text="For captures made with UFADE and ALEX\nby Christian Peter (prosch88)", font=self.font,
                      text_color=FAINT, justify="left", anchor="w").grid(row=2, column=0, sticky="ew", padx=16,
                                                                          pady=(0, 14))
         self._set_info("No capture chosen yet.")
@@ -147,8 +147,8 @@ class App(ctk.CTk):
                 self._summarise()
 
         for r, (label, var, title, note) in enumerate((
-                ("Capture folder", cap, "UFADE screenshots folder, or one chat folder in it",
-                 "UFADE's screenshots folder, or one chat folder in it. It is only read."),
+                ("Capture folder", cap, "The capture's screenshots folder, or one chat folder in it",
+                 "The capture's screenshots folder (from UFADE or ALEX), or one chat folder in it. It is only read."),
                 ("Reports folder", out, "Where to write the reports (not inside the capture)",
                  "Where the reports go. Not inside the capture folder."))):
             self._row(r * 2, label, lambda v=var, t=title: pick(v, t), note)

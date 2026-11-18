@@ -188,6 +188,10 @@ When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE
 
 UFADE can write the accessibility text of the element it focused before a screenshot (`uco-core:statement`, in the device's language) into the `.case.json`. `scripts/statement_check.py CAPTURE` shows where each file holds it, its length and how many comma-separated parts it has, without printing the text; `--show` prints the text too, for your own eyes only. The files are only read.
 
+## Credits
+
+The captures this tool reads are made with [UFADE](https://github.com/prosch88/UFADE) (and [ALEX](https://github.com/prosch88/ALEX)) by Christian Peter (prosch88). He added the `.case.json` records and the accessibility captions that the tool uses, and the window's look follows UFADE's. chat-capture-to-html contains none of UFADE's code.
+
 ## License
 
 GNU General Public License v3.0, see [LICENSE](LICENSE). The packages it uses, and their licences, are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

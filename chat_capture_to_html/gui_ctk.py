@@ -64,7 +64,10 @@ class App(ctk.CTk):
                      justify="left", anchor="w").grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
         self.info = ctk.CTkTextbox(side, width=270, fg_color=SIDE, text_color=INFO, font=self.mono, wrap="none",
                                    activate_scrollbars=True, corner_radius=0)
-        self.info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 12))
+        self.info.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
+        ctk.CTkLabel(side, text="For captures made with UFADE\nby Christian Peter (prosch88)", font=self.font,
+                     text_color=FAINT, justify="left", anchor="w").grid(row=2, column=0, sticky="ew", padx=16,
+                                                                         pady=(0, 14))
         self._set_info("No capture chosen yet.")
 
         right = ctk.CTkFrame(self, corner_radius=0, fg_color=MAIN)

@@ -81,6 +81,20 @@ or `py -m chat_capture_to_html.gui` on Windows, `python3 -m chat_capture_to_html
 
 It uses Tkinter, which comes with Python on Windows and macOS. On Linux, install it first, for example `sudo apt install python3-tk`.
 
+With CustomTkinter installed, the window takes after UFADE's: dark, with a side panel, one step at a time.
+
+```bash
+py -m pip install .[gui]
+```
+
+- **Step 1:** choose the capture folder and the reports folder.
+- **Step 2:** set the same options as above, with **Back** to change the folders.
+- **Step 3:** the run, with its log, the result and the buttons to open the report.
+- **The side panel:** shows what the chosen capture holds: the chats, how many screenshots there are and how many verify, the device from the `.case.json` files, and how many screenshots carry a UFADE caption. It only reads the files; it hashes every screenshot, so it takes a moment on a large capture.
+- **Without CustomTkinter:** the plain window above opens. The report is the same either way.
+
+CustomTkinter is an optional extra so the command line keeps its three dependencies.
+
 ## Use on Linux or macOS
 
 `scripts/run.sh` does the setup for you. It keeps its own Python environment in `.venv` inside this folder, installs the tool there, reinstalls it whenever the code changes, and checks that the version that runs is the one in this folder. Everything after its own options goes to the tool unchanged:
@@ -173,6 +187,10 @@ What you have confirmed by looking at the screenshots can be written down and ch
 When two shots are refused as "only looks alike", `scripts/pair_check.py CAPTURE A B SHIFT` shows, in numbers only, which rows and columns differ, whether each part matches when moved by a few pixels on its own, and how the large areas in both shots measure against the picture rules. Take A, B and SHIFT from the `--diagnose` line (`#B: ... best match ... at SHIFT px`).
 
 UFADE can write the accessibility text of the element it focused before a screenshot (`uco-core:statement`, in the device's language) into the `.case.json`. `scripts/statement_check.py CAPTURE` shows where each file holds it, its length and how many comma-separated parts it has, without printing the text; `--show` prints the text too, for your own eyes only. The files are only read.
+
+## Credits
+
+The captures this tool reads are made with [UFADE](https://github.com/prosch88/UFADE) (and [ALEX](https://github.com/prosch88/ALEX)) by Christian Peter (prosch88). He added the `.case.json` records and the accessibility captions that the tool uses, and the window's look follows UFADE's. chat-capture-to-html contains none of UFADE's code.
 
 ## License
 

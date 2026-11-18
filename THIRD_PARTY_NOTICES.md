@@ -1,6 +1,6 @@
 # Third-party software
 
-chat-capture-to-html bundles no third-party code. It uses these packages. The first three are installed with the tool; the rest only with the `rapidocr` or `test` extras.
+chat-capture-to-html bundles no third-party code. It uses these packages. The first three are installed with the tool; the rest only with the `rapidocr`, `gui` or `test` extras.
 
 | Package, version tested | Used for | Licence, as read from the wheel | Without it |
 |---|---|---|---|
@@ -11,6 +11,8 @@ chat-capture-to-html bundles no third-party code. It uses these packages. The fi
 | onnxruntime 1.29.0 | Installed with RapidOCR | MIT | |
 | opencv-python 5.0.0.93 | Installed with RapidOCR | Apache-2.0, with the same bundled libraries as above | |
 | pyclipper 1.4.0, Shapely 2.2.0, PyYAML 6.0.3, six 1.17.0 | Installed with RapidOCR | MIT, BSD-3-Clause, MIT, MIT | |
+| CustomTkinter 6.0.0 | The UFADE-style window (`pip install .[gui]`) | MIT (the wheel's LICENSE file and classifier; its `License` metadata field says CC0-1.0) | The plain Tkinter window opens |
+| darkdetect 0.8.0, packaging 26.3 | Installed with CustomTkinter | BSD-3-Clause, Apache-2.0 OR BSD-2-Clause | |
 | pytest 9.2.0 | Running the tests (`pip install .[test]`) | MIT | Not needed to use the tool |
 
 Tesseract is a separate program, not a Python package. The tool runs it as a command and includes none of its code. Tesseract and its language data are Apache-2.0. Tested with Tesseract 5.3.4 on Linux; on Windows the README points to the UB Mannheim installer.

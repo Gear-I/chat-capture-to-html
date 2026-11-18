@@ -79,6 +79,45 @@ def build_args(s: Settings) -> list[str]:
     return args
 
 
+def capture_summary(folder: Path) -> str:
+    """What the capture folder holds, for the window's side panel: chats,
+    screenshots, hash checks, devices and UFADE captions. Only reads the
+    files (it hashes every screenshot, as the tool does)."""
+    from .capture import HASH_OK, find_capture_folders, load_capture
+    folder = Path(folder).expanduser()
+    if not folder.is_dir():
+        return "No capture chosen."
+    caps = [load_capture(f) for f in find_capture_folders(folder)]
+    if not caps:
+        return "No screenshots (PNG files)\nin this folder."
+    shots = [s for c in caps for s in c.shots]
+    ok = sum(1 for s in shots if s.status == HASH_OK)
+    lines = ["Capture", f"  {len(caps)} chat(s)"] + [f"   - {c.app} / {c.chat}" for c in caps[:8]]
+    if len(caps) > 8:
+        lines.append(f"   ... and {len(caps) - 8} more")
+    lines += [f"  {len(shots)} screenshots", f"  {ok} hash-verified"]
+    if ok != len(shots):
+        lines.append(f"  ! {len(shots) - ok} with hash problems")
+    orphans = sum(len(c.orphan_hash_files) for c in caps)
+    if orphans:
+        lines.append(f"  ! {orphans} hash file(s) without PNG")
+    devices = {k: d for c in caps for k, d in c.devices.items()}
+    lines += ["", "Device"]
+    if not devices:
+        lines.append("  not recorded (no .case.json)")
+    for k, d in sorted(devices.items()):
+        lines += [f"  {' '.join(x for x in (d.manufacturer, d.model) if x) or 'unknown model'}",
+                  f"  {' '.join(x for x in (d.os_name, d.os_version) if x) or 'system not recorded'}"]
+        if d.serial:
+            lines.append(f"  serial {d.serial}")
+    if len(devices) > 1:
+        lines.append(f"  ! {len(devices)} different devices")
+    captions = sum(1 for s in shots if s.caption)
+    if captions:
+        lines += ["", "UFADE captions", f"  {captions} of {len(shots)} screenshots"]
+    return "\n".join(lines)
+
+
 def new_reports(out: Path, since: float) -> list[Path]:
     """Reports in ``out`` written at or after ``since`` (a time.time() value)."""
     if not out.is_dir():
@@ -262,6 +301,13 @@ def main() -> int:
     except ImportError:
         print("Tkinter is not available. On Linux install python3-tk (e.g. sudo apt install python3-tk).")
         return 1
+    try:  # the UFADE-style window, when CustomTkinter is installed (pip install .[gui])
+        from .gui_ctk import run_window
+    except ImportError:
+        run_window = None
+    if run_window is not None:
+        run_window()
+        return 0
     root = tk.Tk()
     build_window(root)
     root.mainloop()

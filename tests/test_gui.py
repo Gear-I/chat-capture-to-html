@@ -11,7 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 import make_fixture  # noqa: E402
 
-from chat_capture_to_html.gui import Settings, build_args, new_reports, run_tool, validate  # noqa: E402
+from chat_capture_to_html.gui import (Settings, build_args, capture_summary, new_reports, run_tool,  # noqa: E402
+                                      validate)
 
 
 def test_validate_refuses_reports_inside_the_evidence(tmp_path):
@@ -81,3 +82,45 @@ def test_window_runs_and_reports(tmp_path):
         assert "messages ->" in w["log"].get("1.0", "end")
     finally:
         root.destroy()
+
+
+def test_capture_summary_for_the_side_panel(tmp_path):
+    folder = make_fixture.make(tmp_path / "in", "imessage", sidecar="both", captions=True)
+    before = sorted((p.name, p.stat().st_size, p.stat().st_mtime_ns) for p in folder.iterdir())
+    text = capture_summary(tmp_path / "in")
+    n = len(list(folder.glob("*.png")))
+    assert f"{n} screenshots" in text and f"{n - 1} hash-verified" in text and "! 1 with hash problems" in text
+    assert make_fixture.DEVICE["serial"] in text and "iPadOS 26.1" in text
+    assert f"{n - 1} of {n} screenshots" in text                     # UFADE captions
+    assert sorted((p.name, p.stat().st_size, p.stat().st_mtime_ns) for p in folder.iterdir()) == before  # only read
+    (tmp_path / "empty").mkdir()
+    assert "No screenshots" in capture_summary(tmp_path / "empty")
+    assert capture_summary(tmp_path / "missing") == "No capture chosen."
+
+
+def test_ufade_style_window_runs_and_reports(tmp_path):
+    pytest.importorskip("tkinter")
+    pytest.importorskip("customtkinter")
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        pytest.skip("no display")
+    from chat_capture_to_html import gui_ctk
+    make_fixture.make(tmp_path / "in", "imessage")
+    app = gui_ctk.App()
+    try:
+        app.s.capture, app.s.output = str(tmp_path / "in"), str(tmp_path / "out")
+        app.show_folders()
+        app._summarise()
+        app.show_options()
+        app.s.no_ocr = True
+        app.show_run()
+        deadline = time.time() + 120
+        while not app.reports and time.time() < deadline:
+            app.update()
+            time.sleep(0.05)
+        assert [p.name for p in app.reports] == ["Messages_Test Kontakt.html"]
+        while "Capture" not in app.info.get("1.0", "end") and time.time() < deadline:
+            app.update()
+            time.sleep(0.05)
+        assert "hash-verified" in app.info.get("1.0", "end")
+    finally:
+        app.destroy()

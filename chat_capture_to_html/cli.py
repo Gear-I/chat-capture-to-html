@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             print("Use --no-ocr to make the report without reading any text.", file=sys.stderr)
             return 3
         say(f"OCR: {engine.describe()}")
+        for w in getattr(engine, "warnings", []):
+            print(f"  ! OCR: {w}", file=sys.stderr)  # shown even with -q: it limits what the text can be
 
     single = len(folders) == 1
     if a.output is None:

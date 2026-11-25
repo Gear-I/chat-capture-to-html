@@ -20,7 +20,7 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 
    At the end is a table of all screenshots with their computed and recorded hashes. Screenshots are linked, not copied or embedded, so the report never holds an altered copy of the evidence.
 
-The exit code is `2` when any hash fails, a hash file is orphaned, or a chat folder mixes devices, `3` when no OCR engine is available, and `0` otherwise.
+The exit code is `2` when any hash fails, a hash file is orphaned, or a chat folder mixes devices, `3` when OCR cannot start (no engine, missing Tesseract language data, or languages the engine cannot read), and `0` otherwise.
 
 ## Install (Windows)
 
@@ -55,9 +55,9 @@ Keep the report outside the capture folder, so the evidence folder holds only wh
 | Option | |
 |---|---|
 | `--me`, `--them` | Labels for right-hand and left-hand bubbles (default: `Device owner` and the chat folder name) |
-| `--ocr auto\|tesseract\|rapidocr` | OCR engine (default `auto`: Tesseract if installed) |
+| `--ocr auto\|tesseract\|rapidocr` | OCR engine (default `auto`: Tesseract if installed, RapidOCR only when Tesseract is not installed; the console and the report then say so) |
 | `--no-ocr` | Read no text. Each message, and each date or name line between bubbles, is shown as it appears in its screenshot: the original PNG, linked and displayed through a window around the bubble, so no image is cut out or saved. Order, sender side, merging and hashes work as with OCR. The text is then not searchable, and sender names in group chats and in-bubble times are not split out (they stay visible in the bubble) |
-| `--lang deu+eng` | Tesseract languages (default: `deu+eng` where installed) |
+| `--lang deu+eng` | Tesseract languages (default: `deu+eng` where installed; without German data only English is read, and the report says so). Missing language data stops the run instead of switching engine. RapidOCR accepts only `eng` and `chi_sim` |
 | `--tesseract PATH` | Path to `tesseract.exe` if it is somewhere unusual |
 | `--top N`, `--bottom N` | Pixels of fixed header/footer to ignore, if detection gets them wrong |
 | `--left N`, `--right N` | Pixels on the left/right that are not the chat (for example the iPad conversation list), if detection gets them wrong. Read the divider's position in an image viewer that shows pixel coordinates |
@@ -110,7 +110,7 @@ scripts/run.sh ~/captures/screenshots -o ~/reports --no-ocr --diagnose
 | `--python PY` | Python to build the environment with (default `python3`, 3.10 or later) |
 | `--no-venv` | Use that Python directly instead of `.venv`; it must already have the dependencies |
 
-It passes on the tool's exit code (`0`, `2` for a hash problem, `3` for no OCR engine), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
+It passes on the tool's exit code (`0`, `2` for a hash problem, `3` when OCR cannot start), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
 
 ## Device information (`.case.json` files)
 
@@ -138,6 +138,7 @@ Captures with only `.txt` files work as before.
 
 - With `--no-ocr` the report shows the screenshots themselves, so it can't be searched or copied as text.
 - OCR text is a reading aid; the screenshot is the evidence. Emoji are not recognised, and `I` sometimes comes out as `|`. Low-confidence messages are highlighted.
+- RapidOCR, the fallback engine, knows Chinese and English characters only: in German and other languages it loses letters such as ä, ö, ü, ß, é or ñ. Whenever it is used, the console and the report's warnings say so. Use Tesseract with the chat's language data for anything but English.
 - Photos, stickers and voice messages are not bubbles of flat colour, so they are not listed as messages. They are still visible in the linked screenshots.
 - A picture is recognised by having grain or detail on a good part of it (less than 78% of it smooth, where a bubble is 85% or more). A smoother picture (a cartoon with large flat areas, a plain-coloured sticker) is compared like a bubble; if it is a GIF that changes between shots, those shots may then show a gap.
 - Alignment prefers a gap over a guess: a pair of shots that only look alike, or that match equally well in two places, is not merged, so a message can then appear twice on either side of the gap marker.

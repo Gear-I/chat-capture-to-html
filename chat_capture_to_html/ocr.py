@@ -4,7 +4,11 @@
   Windows the UB Mannheim build installs to ``C:\\Program Files\\Tesseract-OCR``;
   tick the German language data during setup for German chats.
 * ``rapidocr``: ``pip install rapidocr-onnxruntime``; its models ship inside
-  the wheel. Good on Latin text, but it drops accents and umlauts.
+  the wheel. They know Chinese and English characters only: accents, umlauts
+  and other letters are lost, so it says so whenever it is used.
+
+Each engine has ``warnings``: what the examiner must know about how it reads
+(shown on the console and in the report).
 """
 
 from __future__ import annotations
@@ -35,6 +39,15 @@ class OcrError(RuntimeError):
     pass
 
 
+class TesseractMissing(OcrError):
+    """Tesseract is not installed (the only case where ``auto`` falls back)."""
+
+
+RAPID_CHARSET = {"eng", "chi_sim"}  # what RapidOCR's bundled model can read
+RAPID_NOTE = ("RapidOCR reads Chinese and English characters only: letters such as ä, ö, ü, ß, é or ñ are "
+              "lost or misread. For other languages install Tesseract with their language data.")
+
+
 def _find_tesseract(explicit: str | None) -> str | None:
     if explicit:
         return explicit
@@ -57,15 +70,20 @@ class TesseractOcr:
     def __init__(self, exe: str | None = None, lang: str | None = None):
         self.exe = _find_tesseract(exe)
         if not self.exe:
-            raise OcrError("Tesseract not found (install it or pass --tesseract PATH)")
+            raise TesseractMissing("Tesseract not found (install it or pass --tesseract PATH)")
         try:
             out = subprocess.run([self.exe, "--list-langs"], capture_output=True, text=True, timeout=30)
             version = subprocess.run([self.exe, "--version"], capture_output=True, text=True, timeout=30)
         except (OSError, subprocess.SubprocessError) as e:
             raise OcrError(f"cannot run Tesseract: {e}") from e
         langs = {l.strip() for l in (out.stdout + out.stderr).splitlines()[1:] if l.strip()}
+        self.warnings: list[str] = []
         if lang is None:
             lang = "+".join(l for l in ("deu", "eng") if l in langs) or "eng"
+            if langs and "deu" not in langs:
+                self.warnings.append("Tesseract has no German language data (deu), so only English is read: "
+                                     "umlauts and ß are lost. Install the German data, or choose languages "
+                                     "with --lang.")
         missing = [l for l in lang.split("+") if langs and l not in langs]
         if missing:
             raise OcrError(f"Tesseract language data missing: {', '.join(missing)}")
@@ -123,6 +141,7 @@ class RapidOcr:
             self.version = f"RapidOCR {version('rapidocr-onnxruntime')}"
         except Exception:
             self.version = "RapidOCR"
+        self.warnings = [RAPID_NOTE]
 
     def describe(self) -> str:
         return f"{self.version} (bundled PP-OCR models)"
@@ -139,12 +158,24 @@ class RapidOcr:
 
 
 def make_engine(name: str = "auto", tesseract: str | None = None, lang: str | None = None):
+    """The OCR engine to use. ``auto`` takes Tesseract, and RapidOCR only when
+    Tesseract is not installed; any other Tesseract problem (missing language
+    data, a program that will not run) is an error, never a silent switch."""
+    if name not in ("auto", "tesseract", "rapidocr"):
+        raise OcrError(f"unknown OCR engine {name!r}")
+    fallback = None
     if name in ("auto", "tesseract"):
         try:
             return TesseractOcr(tesseract, lang)
-        except OcrError:
+        except TesseractMissing as e:
             if name == "tesseract":
                 raise
-    if name in ("auto", "rapidocr"):
-        return RapidOcr()
-    raise OcrError(f"unknown OCR engine {name!r}")
+            fallback = str(e)
+    if lang and not set(lang.split("+")) <= RAPID_CHARSET:
+        raise OcrError((f"{fallback}; " if fallback else "")
+                       + f"RapidOCR cannot read the languages asked for ({lang}): its model knows Chinese and "
+                       "English characters only. Install Tesseract with that language data, or leave out --lang.")
+    engine = RapidOcr()
+    if fallback:
+        engine.warnings.insert(0, f"{fallback}, so the fallback engine RapidOCR is used.")
+    return engine

@@ -155,7 +155,7 @@ class _UF:
 def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None = None,
                include_unverified: bool = True, min_conf: float = 45.0, progress=lambda s: None,
                left: int | None = None, right: int | None = None) -> ChatResult:
-    warnings: list[str] = []
+    warnings: list[str] = [f"OCR: {w}" for w in getattr(engine, "warnings", [])]  # what the engine cannot read
     infos = [ShotInfo() for _ in cap.shots]
     images: dict[int, np.ndarray] = {}
     for i, s in enumerate(cap.shots):

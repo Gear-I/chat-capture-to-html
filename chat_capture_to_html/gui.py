@@ -237,8 +237,12 @@ def build_window(root):
     ttk.Label(opts, text="(empty: the chat folder name)", foreground="gray").grid(row=5, column=1, sticky="w")
     ttk.Label(opts, text="OCR languages").grid(row=6, column=0, sticky="w", pady=(6, 0))
     ttk.Entry(opts, textvariable=lang).grid(row=6, column=1, sticky="ew", pady=(6, 0))
-    ttk.Label(opts, text="(empty: German and English, where installed; e.g. eng, or deu+eng)",
-              foreground="gray").grid(row=7, column=1, sticky="w")
+    from .ocr import installed_languages, language_label
+    installed = installed_languages()
+    ttk.Label(opts, text="(empty: German and English, where installed; e.g. eng, or deu+eng)\n"
+              + ("Installed: " + ", ".join(language_label(c) for c in installed) if installed
+                 else "Tesseract not found: install it with the languages you need (see the README)"),
+              foreground="gray", wraplength=560, justify="left").grid(row=7, column=1, sticky="w")
 
     buttons = ttk.Frame(frm)
     buttons.grid(row=3, column=0, columnspan=3, sticky="ew")

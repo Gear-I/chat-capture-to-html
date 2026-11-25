@@ -25,6 +25,7 @@ import customtkinter as ctk
 
 from . import __version__
 from .gui import RESULTS, Settings, build_args, capture_summary, new_reports, run_tool, set_icon, validate
+from .ocr import default_languages, installed_languages, language_label
 
 SIDE = "#2c353e"       # side panel
 MAIN = "#212121"       # main area
@@ -37,7 +38,7 @@ class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"chat-capture-to-html {__version__}")
-        self.geometry("1040x640")
+        self.geometry("1040x700")
         self.minsize(900, 560)
         set_icon(self)  # on Windows through iconbitmap, which also keeps CustomTkinter's own icon away
         self.font = ctk.CTkFont(size=14)
@@ -190,8 +191,7 @@ class App(ctk.CTk):
             r += 1
         for var, text, note in (
                 (me, "Right-hand bubbles", "Label for the device owner's side."),
-                (them, "Left-hand bubbles", "Empty: the chat folder name."),
-                (lang, "OCR languages", "Empty: German and English, where installed. E.g. eng, or deu+eng.")):
+                (them, "Left-hand bubbles", "Empty: the chat folder name.")):
             ctk.CTkLabel(self.page, text=text, font=self.font, anchor="w").grid(
                 row=r, column=0, padx=(10, 20), pady=(10, 0), sticky="w")
             ctk.CTkEntry(self.page, textvariable=var, font=self.font).grid(
@@ -199,6 +199,7 @@ class App(ctk.CTk):
             ctk.CTkLabel(self.page, text=note, text_color=FAINT, font=self.font, anchor="w").grid(
                 row=r + 1, column=1, sticky="w")
             r += 2
+        r = self._language_picker(r, lang)
         self.error = ctk.CTkLabel(self.page, text="", text_color=BAD, font=self.font, wraplength=640, anchor="w")
         self.error.grid(row=r, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 0))
         self.page.grid_rowconfigure(r + 1, weight=1)
@@ -223,6 +224,70 @@ class App(ctk.CTk):
         bar.grid(row=r + 2, column=0, columnspan=2, sticky="e", padx=10, pady=10)
         ctk.CTkButton(bar, text="Back", command=back, font=self.font, fg_color="#3a3f45").pack(side="left", padx=6)
         ctk.CTkButton(bar, text="Run", command=run, font=self.font).pack(side="left")
+
+    def _languages(self) -> list[str] | None:
+        """Tesseract's installed languages, asked once per window."""
+        if not hasattr(self, "_installed"):
+            self._installed = installed_languages()
+        return self._installed
+
+    def _language_picker(self, r: int, lang) -> int:
+        """Ticks for the languages Tesseract has installed, and the field that
+        holds the chosen codes in their order (the first is preferred where
+        they disagree). Ticking adds a language at the end, unticking removes
+        it, and typing in the field updates the ticks. Returns the next row."""
+        ctk.CTkLabel(self.page, text="OCR languages", font=self.font, anchor="w").grid(
+            row=r, column=0, padx=(10, 20), pady=(10, 0), sticky="nw")
+        installed = self._languages()
+        if installed is None:
+            ctk.CTkLabel(self.page, text="Tesseract not found. Install it with the languages you need (see the "
+                         "README); without it the fallback reads Chinese and English characters only.",
+                         font=self.font, text_color=BAD, anchor="w", justify="left", wraplength=440).grid(
+                row=r, column=1, sticky="w", pady=(10, 0))
+            return r + 1
+        if not lang.get().strip():
+            lang.set(default_languages(installed))
+        box = ctk.CTkScrollableFrame(self.page, height=64, fg_color="#2a2a2a")
+        box.grid(row=r, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
+        ticks: dict[str, ctk.BooleanVar] = {}
+        busy = {"now": False}
+
+        def codes() -> list[str]:
+            return [c for c in lang.get().replace(",", "+").replace(" ", "+").split("+") if c]
+
+        def ticked(code: str) -> None:
+            chosen = codes()
+            if ticks[code].get() and code not in chosen:
+                chosen.append(code)
+            elif not ticks[code].get():
+                chosen = [c for c in chosen if c != code]
+            busy["now"] = True
+            lang.set("+".join(chosen))
+            busy["now"] = False
+
+        def typed(*_) -> None:
+            if busy["now"]:
+                return
+            chosen = set(codes())
+            for code, var in ticks.items():
+                var.set(code in chosen)
+
+        chosen = set(codes())
+        self.lang_boxes = {}  # code -> checkbox; with self.lang_var, for tests
+        for i, code in enumerate(installed):
+            ticks[code] = ctk.BooleanVar(value=code in chosen)
+            self.lang_boxes[code] = ctk.CTkCheckBox(box, text=language_label(code), variable=ticks[code],
+                                                    font=self.font, checkbox_width=18, checkbox_height=18,
+                                                    command=lambda c=code: ticked(c))
+            self.lang_boxes[code].grid(row=i // 3, column=i % 3, sticky="w", padx=6, pady=2)
+        lang.trace_add("write", typed)
+        self.lang_var = lang
+        ctk.CTkEntry(self.page, textvariable=lang, font=self.font).grid(
+            row=r + 1, column=1, sticky="ew", padx=(0, 10), pady=(6, 0))
+        ctk.CTkLabel(self.page, text="In this order; the first is preferred where they disagree. "
+                     "Tick or untick, or type the codes (e.g. deu+eng).", text_color=FAINT, font=self.font,
+                     anchor="w", justify="left", wraplength=440).grid(row=r + 2, column=1, sticky="w")
+        return r + 3
 
     # -------------------------------------------------------------- step 3
     def show_run(self) -> None:

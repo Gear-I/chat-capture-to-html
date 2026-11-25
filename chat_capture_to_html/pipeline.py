@@ -85,6 +85,7 @@ class ChatResult:
     middle_match: dict[int, Placement] = field(default_factory=dict)  # shot index -> first try on the middle rows
     column_change: list[float] = field(default_factory=list)  # per 1/40 of the width, for --diagnose
     text_read: bool = True           # False with --no-ocr: messages are views of the screenshots
+    ocr_setup: list[tuple[str, str]] = field(default_factory=list)  # program, settings, files and their SHA-256
 
 
 # ---------------------------------------------------------------- helpers
@@ -172,7 +173,9 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         images[i] = arr
 
     if not images:
-        return ChatResult(cap, infos, [], [], 0, 0, "", [], engine.describe(), False, ["no usable screenshots"])
+        return ChatResult(cap, infos, [], [], 0, 0, "", [], engine.describe() if engine is not None else "none (--no-ocr)",
+                          False, warnings + ["no usable screenshots"], text_read=engine is not None,
+                          ocr_setup=engine.setup() if engine is not None and hasattr(engine, "setup") else [])
 
     size = Counter(a.shape[:2] for a in images.values()).most_common(1)[0][0]
     for i in list(images):
@@ -410,7 +413,8 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
                       engine.describe() if engine is not None else "none (--no-ocr)", stripped, warnings, xo, xo + W,
                       {idx[k]: Placement(p.segment, p.y, idx[p.matched_with] if p.matched_with is not None else None,
                                          p.score, p.note) for k, p in enumerate(middle)},
-                      [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None)
+                      [float(c.mean()) for c in np.array_split(profile, 40)], engine is not None,
+                      engine.setup() if engine is not None and hasattr(engine, "setup") else [])
 
 
 def _words(text: str) -> list[str]:

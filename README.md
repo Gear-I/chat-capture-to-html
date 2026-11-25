@@ -18,6 +18,8 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
    - the file name, SHA-256 and verification result of the shot its text was read from;
    - the OCR confidence.
 
+   The header records the OCR setup, so the text can be reproduced: the OCR program and its version, the languages in the order used, the settings, and every language or model file it read with, each with its path, size and SHA-256 (hashed from the bytes on disk at the start of the run). A file that cannot be found is listed as not hashed.
+
    At the end is a table of all screenshots with their computed and recorded hashes. Screenshots are linked, not copied or embedded, so the report never holds an altered copy of the evidence.
 
 The exit code is `2` when any hash fails, a hash file is orphaned, or a chat folder mixes devices, `3` when OCR cannot start (no engine, missing Tesseract language data, or languages the engine cannot read), and `0` otherwise.

@@ -185,6 +185,10 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
                 f"chat \u201c{recorded['ConversationPartner']}\u201d" if recorded.get("ConversationPartner") else ""]
         devices_html += f"<dt>Recorded</dt><dd>{e(', '.join(b for b in bits if b))} (from the .case.json files)</dd>"
 
+    setup_rows = getattr(res, "ocr_setup", [])
+    ocr_setup = ('<dt>OCR setup</dt><dd><ul class="setup">'
+                 + "".join(f"<li>{e(k)}: <code>{e(v)}</code></li>" for k, v in setup_rows)
+                 + "</ul></dd>") if setup_rows else ""
     generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     utc = [s.captured_utc for s in shots if s.captured_utc]
     taken = [s.taken for s in shots if s.taken]
@@ -224,6 +228,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:0}}dt
 .meta{{align-self:center;text-align:center;font-size:13px;color:var(--mut);max-width:90%}}.meta .refs{{margin-left:6px;font-size:11px}}
 .gap{{align-self:stretch;text-align:center;font-size:13px;color:var(--bad);border-top:2px dashed var(--bad);padding-top:6px}}
 .sw{{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-2px;margin-right:4px}}
+.setup{{margin:0;padding-left:18px;font-size:12px}}.setup code{{font-size:11px}}
 .caption{{font-size:12px;color:var(--mut);margin-top:4px;overflow-wrap:anywhere}}.caption.bad{{color:var(--bad)}}
 .conf.low{{color:var(--bad)}}.src{{margin-right:2px}}
 .tw{{overflow-x:auto}}table{{border-collapse:collapse;font-size:12px;width:100%}}td,th{{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}}
@@ -247,6 +252,7 @@ tr.bad td{{color:var(--bad)}}
 <dt>Captured</dt><dd>{e(span)}</dd>
 <dt>Senders</dt><dd>right-hand bubbles = {e(me)}; left-hand bubbles = {e(them)}</dd>
 <dt>OCR</dt><dd>{e(res.ocr_engine) + ", offline" if res.text_read else "off (--no-ocr): each message is shown as it appears in its screenshot"}</dd>
+{ocr_setup}
 <dt>Generated</dt><dd>{e(generated)} by chat-capture-to-html {__version__}</dd>
 </dl></div>
 {f'<h2>Warnings</h2><div class="card warns"><ul>{warns}</ul></div>' if warns else ""}
@@ -323,6 +329,10 @@ def render_index(items, out_path: Path) -> str:
         sections.append(f"<h2>{title}</h2><div class=\"tw\"><table><thead><tr><th>App</th><th>Chat</th>"
                         f"<th>Screenshots</th><th>Verified</th><th>Messages</th><th>Gaps</th></tr></thead>"
                         f"<tbody>{''.join(rows)}</tbody></table></div>")
+    setup_rows = getattr(res, "ocr_setup", [])
+    ocr_setup = ('<dt>OCR setup</dt><dd><ul class="setup">'
+                 + "".join(f"<li>{e(k)}: <code>{e(v)}</code></li>" for k, v in setup_rows)
+                 + "</ul></dd>") if setup_rows else ""
     generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

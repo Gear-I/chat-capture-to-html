@@ -8,18 +8,23 @@
   and other letters are lost, so it says so whenever it is used.
 
 Each engine has ``warnings``: what the examiner must know about how it reads
-(shown on the console and in the report).
+(shown on the console and in the report), and ``setup()``: the program, the
+settings and every model or language file it reads with, each with its
+SHA-256, so the report says exactly what produced the text.
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import re
 import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -37,6 +42,17 @@ class Line:
 
 class OcrError(RuntimeError):
     pass
+
+
+def _file_line(label: str, path: Path | None) -> tuple[str, str]:
+    """("label", "file name · size · SHA-256") for a model or language file."""
+    if path is None or not path.is_file():
+        return label, "file not found, so not hashed" + (f" ({path})" if path else "")
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return label, f"{path} · {path.stat().st_size} bytes · SHA-256 {h.hexdigest()}"
 
 
 class TesseractMissing(OcrError):
@@ -76,7 +92,12 @@ class TesseractOcr:
             version = subprocess.run([self.exe, "--version"], capture_output=True, text=True, timeout=30)
         except (OSError, subprocess.SubprocessError) as e:
             raise OcrError(f"cannot run Tesseract: {e}") from e
-        langs = {l.strip() for l in (out.stdout + out.stderr).splitlines()[1:] if l.strip()}
+        listing = (out.stdout + out.stderr).splitlines()
+        langs = {l.strip() for l in listing[1:] if l.strip()}
+        # 'List of available languages in "/usr/share/tesseract-ocr/5/tessdata/" (3):'
+        where = re.search(r'"([^"]+)"', listing[0]) if listing else None
+        self.tessdata = (Path(where.group(1)) if where else
+                         Path(os.environ["TESSDATA_PREFIX"]) if os.environ.get("TESSDATA_PREFIX") else None)
         self.warnings: list[str] = []
         if lang is None:
             lang = "+".join(l for l in ("deu", "eng") if l in langs) or "eng"
@@ -94,11 +115,27 @@ class TesseractOcr:
     def describe(self) -> str:
         return f"{self.version} (languages: {self.lang})"
 
+    PSM = "11"  # sparse text: copes with mixed sizes such as a small time stamp in a bubble
+
+    def setup(self) -> list[tuple[str, str]]:
+        """Program, languages, settings, and each language file with its SHA-256
+        (hashed once per run, from the bytes on disk)."""
+        if getattr(self, "_setup", None) is not None:
+            return self._setup
+        rows = [("Program", f"{self.version} · {self.exe}"),
+                ("Languages", f"{self.lang} (in this order; the first is preferred where they disagree)"),
+                ("Settings", f"--psm {self.PSM} (sparse text), -c preserve_interword_spaces=1, tsv output")]
+        for code in self.lang.split("+"):
+            rows.append(_file_line(f"Language file {code}",
+                                   self.tessdata / f"{code}.traineddata" if self.tessdata else None))
+        self._setup = rows
+        return rows
+
     def read(self, gray: np.ndarray, block: bool = True) -> list[Line]:
         ok, png = cv2.imencode(".png", gray)
         if not ok:
             raise OcrError("cannot encode image for OCR")
-        psm = "11"  # sparse text: copes with mixed sizes such as a small time stamp in a bubble
+        psm = self.PSM
         try:
             proc = subprocess.run(
                 [self.exe, "stdin", "stdout", "-l", self.lang, "--psm", psm, "-c", "preserve_interword_spaces=1", "tsv"],
@@ -142,6 +179,24 @@ class RapidOcr:
         except Exception:
             self.version = "RapidOCR"
         self.warnings = [RAPID_NOTE]
+        import rapidocr_onnxruntime as pkg  # type: ignore
+        self.folder = Path(pkg.__file__).parent if getattr(pkg, "__file__", None) else None
+
+    def setup(self) -> list[tuple[str, str]]:
+        """Program, settings file and each bundled model with its SHA-256
+        (hashed once per run, from the bytes on disk)."""
+        if getattr(self, "_setup", None) is not None:
+            return self._setup
+        rows = [("Program", f"{self.version} · {self.folder or 'package folder unknown'}"),
+                ("Languages", "Chinese and English characters (bundled model)")]
+        if self.folder is None:
+            rows.append(("Model files", "package folder unknown, so not hashed"))
+        else:
+            rows.append(_file_line("Settings file", self.folder / "config.yaml"))
+            models = sorted((self.folder / "models").glob("*.onnx"))
+            rows += [_file_line(f"Model {m.stem}", m) for m in models] or [("Model files", "none found, so not hashed")]
+        self._setup = rows
+        return rows
 
     def describe(self) -> str:
         return f"{self.version} (bundled PP-OCR models)"

@@ -152,7 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         if n_doubt:
             say(f"  ! {n_doubt} message(s) found in fewer screenshots than show their place; marked in the report")
         for w in res.warnings:
-            say(f"  ! {w}")
+            if not w.startswith("OCR: "):  # printed once at the start; the report lists them too
+                say(f"  ! {w}")
         if a.diagnose:
             _diagnose(res)
         elif len(res.segment_order) > 1:

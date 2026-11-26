@@ -76,7 +76,7 @@ chat-capture-to-html-gui
 
 or `py -m chat_capture_to_html.gui` on Windows, `python3 -m chat_capture_to_html.gui` elsewhere. Choose the capture folder and a reports folder, tick the options you want, and press **Run**:
 
-- **No OCR**, **Only use screenshots whose hash verifies** and **Diagnose** are the `--no-ocr`, `--verified-only` and `--diagnose` options. The two sender labels are `--me` and `--them`. **OCR languages** is `--lang`: Tesseract language codes joined by `+`, such as `eng` or `deu+eng`; left empty, German and English are used where installed. It is ignored with No OCR.
+- **No OCR**, **Only use screenshots whose hash verifies** and **Diagnose** are the `--no-ocr`, `--verified-only` and `--diagnose` options. The two sender labels are `--me` and `--them`. **OCR languages** is `--lang`: Tesseract language codes joined by `+`, such as `eng` or `deu+eng`; left empty, German and English are used where installed. It is ignored with No OCR. Below the field the window names the languages Tesseract has installed.
 - The tool's output appears in the log as it runs. Afterwards the window says in plain words whether every hash matched, and **Open report** opens the report in your browser.
 - It refuses a reports folder inside the capture folder, so the evidence folder stays as UFADE wrote it.
 - The title bar shows the version, so you can tell which build ran.
@@ -90,7 +90,7 @@ py -m pip install .[gui]
 ```
 
 - **Step 1:** choose the capture folder and the reports folder.
-- **Step 2:** set the same options as above, with **Back** to change the folders.
+- **Step 2:** set the same options as above, with **Back** to change the folders. The OCR languages are ticks for every language Tesseract has installed, by name, with German and English ticked by default; the field below holds the chosen codes in their order (the first is preferred where they disagree), and typing there moves the ticks. Nothing is downloaded: to add a language, install its Tesseract language data. Without Tesseract the window says so.
 - **Step 3:** the run, with its log, the result and the buttons to open the report.
 - **The side panel:** shows what the chosen capture holds: the chats, how many screenshots there are and how many verify, the device from the `.case.json` files, and how many screenshots carry an accessibility caption. It only reads the files; it hashes every screenshot, so it takes a moment on a large capture.
 - **Without CustomTkinter:** the plain window above opens. The report is the same either way.

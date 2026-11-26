@@ -127,3 +127,15 @@ def test_report_lists_the_ocr_setup(tmp_path, monkeypatch):
     page = render(res, tmp_path / "r.html", "Me", "Them")
     assert "<dt>OCR setup</dt>" in page and "Language file deu" in page and page.count("SHA-256 ") >= 2
     assert "<dt>OCR setup</dt>" not in render(build_chat(load_capture(folder), None), tmp_path / "n.html", "Me", "Them")
+
+
+def test_installed_languages_lists_names_and_leaves_out_osd(tmp_path, monkeypatch):
+    _fake_tessdata(tmp_path, monkeypatch, langs=("osd", "eng", "deu", "spa", "xyz"))
+    langs = ocr.installed_languages()
+    assert langs == ["eng", "deu", "spa", "xyz"]                 # by name: English, German, Spanish, then xyz
+    assert [ocr.language_label(c) for c in langs] == ["English (eng)", "German (deu)", "Spanish (spa)", "xyz"]
+    assert ocr.default_languages(langs) == "deu+eng" and ocr.default_languages(["spa"]) == "eng"
+
+
+def test_installed_languages_without_tesseract(no_tesseract):
+    assert ocr.installed_languages() is None

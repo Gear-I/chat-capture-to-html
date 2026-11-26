@@ -148,3 +148,42 @@ def test_window_icon_has_every_size_on_linux():
                                                                          (16, 16)]
     finally:
         root.destroy()
+
+
+def test_language_picker_ticks_and_order(tmp_path, monkeypatch):
+    pytest.importorskip("tkinter")
+    pytest.importorskip("customtkinter")
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        pytest.skip("no display")
+    from chat_capture_to_html import gui_ctk
+    monkeypatch.setattr(gui_ctk, "installed_languages", lambda: ["eng", "fra", "deu"])
+    app = gui_ctk.App()
+    try:
+        app.s.capture, app.s.output = str(tmp_path / "in"), str(tmp_path / "out")
+        app.show_options()
+        boxes, lang = app.lang_boxes, app.lang_var
+        assert lang.get() == "deu+eng" and [c for c, b in boxes.items() if b.get()] == ["eng", "deu"]
+        boxes["fra"].toggle()                    # ticking adds it at the end
+        assert lang.get() == "deu+eng+fra"
+        boxes["deu"].toggle()                    # unticking removes it
+        assert lang.get() == "eng+fra"
+        lang.set("fra+deu")                      # typing sets the ticks
+        assert [c for c, b in boxes.items() if b.get()] == ["fra", "deu"]
+    finally:
+        app.destroy()
+
+
+def test_language_picker_without_tesseract(tmp_path, monkeypatch):
+    pytest.importorskip("tkinter")
+    pytest.importorskip("customtkinter")
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        pytest.skip("no display")
+    from chat_capture_to_html import gui_ctk
+    monkeypatch.setattr(gui_ctk, "installed_languages", lambda: None)
+    app = gui_ctk.App()
+    try:
+        app.show_options()
+        texts = [w.cget("text") for w in app.page.winfo_children() if isinstance(w, gui_ctk.ctk.CTkLabel)]
+        assert any(t.startswith("Tesseract not found") for t in texts)
+    finally:
+        app.destroy()

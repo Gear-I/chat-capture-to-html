@@ -55,6 +55,47 @@ def _file_line(label: str, path: Path | None) -> tuple[str, str]:
     return label, f"{path} · {path.stat().st_size} bytes · SHA-256 {h.hexdigest()}"
 
 
+# Names for the language codes Tesseract uses (its .traineddata files); a code
+# not listed here is shown as it is.
+LANGUAGE_NAMES = {
+    "afr": "Afrikaans", "ara": "Arabic", "bel": "Belarusian", "ben": "Bengali", "bul": "Bulgarian",
+    "cat": "Catalan", "ces": "Czech", "chi_sim": "Chinese (Simplified)", "chi_tra": "Chinese (Traditional)",
+    "dan": "Danish", "deu": "German", "ell": "Greek", "eng": "English", "est": "Estonian", "fas": "Persian",
+    "fin": "Finnish", "fra": "French", "heb": "Hebrew", "hin": "Hindi", "hrv": "Croatian", "hun": "Hungarian",
+    "ind": "Indonesian", "isl": "Icelandic", "ita": "Italian", "jpn": "Japanese", "kor": "Korean",
+    "lav": "Latvian", "lit": "Lithuanian", "msa": "Malay", "nld": "Dutch", "nor": "Norwegian", "pol": "Polish",
+    "por": "Portuguese", "ron": "Romanian", "rus": "Russian", "slk": "Slovak", "slv": "Slovenian",
+    "spa": "Spanish", "sqi": "Albanian", "srp": "Serbian", "swe": "Swedish", "tha": "Thai", "tur": "Turkish",
+    "ukr": "Ukrainian", "urd": "Urdu", "vie": "Vietnamese",
+}
+NOT_A_LANGUAGE = {"osd", "equ"}  # orientation and script detection, equations
+
+
+def language_label(code: str) -> str:
+    """\"German (deu)\" for a known code, else the code itself."""
+    name = LANGUAGE_NAMES.get(code)
+    return f"{name} ({code})" if name else code
+
+
+def default_languages(installed) -> str:
+    """The languages used when none are chosen: German and English where installed."""
+    return "+".join(l for l in ("deu", "eng") if l in installed) or "eng"
+
+
+def installed_languages(exe: str | None = None) -> list[str] | None:
+    """The languages Tesseract has installed, sorted by name, or None when
+    Tesseract is not found or will not run. Only lists: nothing is downloaded."""
+    path = _find_tesseract(exe)
+    if not path:
+        return None
+    try:
+        out = subprocess.run([path, "--list-langs"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    codes = {l.strip() for l in (out.stdout + out.stderr).splitlines()[1:] if l.strip()} - NOT_A_LANGUAGE
+    return sorted(codes, key=lambda c: (LANGUAGE_NAMES.get(c, c).lower(), c))
+
+
 class TesseractMissing(OcrError):
     """Tesseract is not installed (the only case where ``auto`` falls back)."""
 
@@ -100,7 +141,7 @@ class TesseractOcr:
                          Path(os.environ["TESSDATA_PREFIX"]) if os.environ.get("TESSDATA_PREFIX") else None)
         self.warnings: list[str] = []
         if lang is None:
-            lang = "+".join(l for l in ("deu", "eng") if l in langs) or "eng"
+            lang = default_languages(langs)
             if langs and "deu" not in langs:
                 self.warnings.append("Tesseract has no German language data (deu), so only English is read: "
                                      "umlauts and ß are lost. Install the German data, or choose languages "

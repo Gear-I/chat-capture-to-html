@@ -89,12 +89,15 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             f'{" — text read from this shot" if s.shot in m.text_from else ""}">#{s.shot + 1}</a>'
             for s in m.sources)
         text = "<br>".join(e(l) for l in m.lines) if m.lines else _views(m, shots, res.shots, hrefs, e)
+        # read text runs in its own direction (Arabic, Hebrew right to left); the
+        # bubble's side, and so the sender, does not depend on it
+        rtl = ' dir="auto"' if m.lines else ""
         conf = f" · OCR confidence {m.conf:.0f}%" if res.text_read else ""
         lowc = " low" if m.conf < 60 else ""
         hash_line = (f'<span class="hash{" bad" if ps.status != HASH_OK else ""}">'
                      f'{e(ps.path.name)} · SHA-256 <code>{ps.sha256}</code> · {STATUS_TEXT[ps.status]}</span>')
         if m.kind == "meta":
-            rows.append(f'<div class="meta{" doubt" if m.doubt else ""}" id="m{n}"><span class="t">{text}</span>'
+            rows.append(f'<div class="meta{" doubt" if m.doubt else ""}" id="m{n}"><span class="t"{rtl}>{text}</span>'
                         f'<span class="refs">{src_links}</span>'
                         + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
                         + '</div>')
@@ -108,7 +111,7 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         rows.append(
             f'<div class="msg {m.side}{" warn" if bad else ""}{" doubt" if m.doubt else ""}" id="m{n}">'
             f'<div class="who">{swatch}{e(who)}{side_note}</div>'
-            f'<div class="bubble{"" if m.lines else " image"}" style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
+            f'<div class="bubble{"" if m.lines else " image"}"{rtl} style="--bc:{_hex(m.color) if m.color else "transparent"}">{text}</div>'
             f'<div class="foot"><a class="n" href="#m{n}">#{n}</a>'
             f'{f" · {e(m.time)}" if m.time else ""}<span class="conf{lowc}">{conf}</span> · '
             f'screenshots {src_links}</div>'
@@ -116,7 +119,7 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
             + (f'<div class="foot doubtnote">&#9888; {e(m.doubt)}</div>' if m.doubt else "")
             + (f'<div class="foot doubtnote">&#9888; {e(_cut_note(m.cut))}</div>' if getattr(m, "cut", "") else "")
             + "".join(f'<div class="caption">UFADE accessibility caption with screenshot '
-                      f'<a href="{e(hrefs[si])}" data-shot="{si}">#{si + 1}</a>: \u201c{e(c)}\u201d</div>'
+                      f'<a href="{e(hrefs[si])}" data-shot="{si}">#{si + 1}</a>: \u201c<bdi>{e(c)}</bdi>\u201d</div>'
                       for si, c in getattr(m, "captions", []))
             + '</div>')
 
@@ -133,7 +136,7 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
         shot_rows.append(
             f'<tr class="{"" if s.status == HASH_OK else "bad"}"><td>#{i + 1}</td>'
             f'<td><a href="{e(hrefs[i])}" data-shot="{i}">{e(s.path.name)}</a>'
-            + (f'<div class="caption">Accessibility caption of the focused element: \u201c{e(s.caption)}\u201d'
+            + (f'<div class="caption">Accessibility caption of the focused element: \u201c<bdi>{e(s.caption)}</bdi>\u201d'
                + (f' — matched to message <a href="#m{caption_msg[i]}">#{caption_msg[i]}</a>' if i in caption_msg else "")
                + '</div>' if getattr(s, "caption", None) else "")
             + (f'<div class="caption bad">{e(s.caption_note)}</div>' if getattr(s, "caption_note", "") else "")

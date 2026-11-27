@@ -47,6 +47,64 @@ CONVO = [
 ]
 
 
+# The same invented conversation in other languages, for OCR tests per
+# language (issue #48). Each uses that language's special letters.
+CONVOS = {
+    "deu": CONVO,
+    "fra": [
+        ("date", "Lundi 3 novembre"),
+        ("left", "Salut ! Tu es au bureau demain ?"),
+        ("right", "Oui, à partir de 9 h. Pourquoi ?"),
+        ("left", "J'apporte les documents pour la vérification."),
+        ("left", "Et la clé de l'entrepôt."),
+        ("right", "Très bien, merci."),
+        ("right", "Peux-tu aussi envoyer la facture d'octobre ? Le total était de 1 284,50 €."),
+        ("left", "Bien sûr, je l'envoie ce soir."),
+        ("date", "Mardi 4 novembre"),
+        ("left", "Je suis en route, embouteillage sur l'A3. Environ 20 minutes de retard."),
+        ("right", "Pas de problème."),
+        ("left", "Merci ! Bonne journée à tous."),
+        ("right", "La réunion a été déplacée en salle 4.12, à tout à l'heure."),
+        ("left", "D'accord 👍 j'arrive"),
+        ("right", "Dernier message de cette conversation, reçu à Noël."),
+    ],
+    "spa": [
+        ("date", "Lunes, 3 de noviembre"),
+        ("left", "¡Hola! ¿Estás mañana en la oficina?"),
+        ("right", "Sí, desde las 9. ¿Por qué?"),
+        ("left", "Llevo los documentos para la revisión."),
+        ("left", "Y la llave del almacén."),
+        ("right", "Genial, gracias."),
+        ("right", "¿Puedes enviar también la factura de octubre? El total era 1.284,50 €."),
+        ("left", "Claro, te la envío esta noche."),
+        ("date", "Martes, 4 de noviembre"),
+        ("left", "Voy en camino, atasco en la A3. Unos 20 minutos de retraso."),
+        ("right", "No pasa nada."),
+        ("left", "¡Gracias! Saludos a todos."),
+        ("right", "La reunión se cambió a la sala 4.12, nos vemos allí."),
+        ("left", "Vale 👍 ya voy"),
+        ("right", "Último mensaje de este chat de prueba, señor Núñez."),
+    ],
+    "rus": [
+        ("date", "Понедельник, 3 ноября"),
+        ("left", "Привет! Ты завтра в офисе?"),
+        ("right", "Да, с 9 часов. А что?"),
+        ("left", "Я принесу документы для проверки."),
+        ("left", "И ключ от склада."),
+        ("right", "Отлично, спасибо."),
+        ("right", "Можешь также прислать счёт за октябрь? Итого было 1 284,50 €."),
+        ("left", "Конечно, отправлю сегодня вечером."),
+        ("date", "Вторник, 4 ноября"),
+        ("left", "Я в пути, пробка на трассе А3. Опоздаю минут на 20."),
+        ("right", "Без проблем."),
+        ("left", "Спасибо! Всем привет."),
+        ("right", "Встречу перенесли в комнату 4.12, увидимся там."),
+        ("left", "Хорошо 👍 уже иду"),
+        ("right", "Последнее сообщение в этом тестовом чате, ёлка."),
+    ],
+}
+
+
 def font(size):
     for name in ("DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "arial.ttf", "segoeui.ttf"):
         try:
@@ -69,14 +127,15 @@ def wrap(draw, text, f, maxw):
     return lines
 
 
-def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False, long=False):
+def render_chat(style, rounds=1, pictures=False, ghost=False, photo=False, long=False, language="deu"):
     """Draw the whole chat as one tall image. With rounds > 1 the conversation
     repeats, each round numbered so no two messages look the same. With
     ``pictures`` an animated picture (a GIF) follows the fourth message of each
     round; its box is in ``tall.info["pictures"]`` (see paint_frames). With
     ``long`` a message taller than the screen follows the tenth; its top and
     bottom row are in ``tall.info["long"]``."""
-    convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in CONVO]
+    base = CONVOS[language]
+    convo = [(k, t if r == 0 else f"{t} [{r + 1}]") for r in range(rounds) for k, t in base]
     if ghost:  # an empty stretch where something shows up in one screenshot only (see make)
         convo = convo[:7] + [("space", "")] + convo[7:]
     if pictures:
@@ -428,7 +487,7 @@ def _caption(tall, top: int, ch: int, i: int) -> str | None:
 
 def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: str = "txt",
          device: dict | None = None, chat: str = "Test Kontakt", ghost: bool = False, photo: bool = False,
-         long: bool = False, captions: bool = False) -> Path:
+         long: bool = False, captions: bool = False, language: str = "deu") -> Path:
     """Write a synthetic capture. ``sidecar`` is "txt" (UFADE before 1.0.6),
     "case" (a <name>.case.json only, as ALEX writes) or "both" (as UFADE writes
     from 1.0.6 on). With ``long`` the chat holds a message taller than the
@@ -439,7 +498,8 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     accessibility caption, as newer UFADE versions write: that of the message
     nearest the middle of the screenshot, in the form iOS uses ("Your Text
     Message, <text>, <time>" for the right-hand side, "Message, <text>, <time>"
-    for the left)."""
+    for the left). ``language`` picks the conversation: "deu" (German and
+    English, the default), "fra", "spa" or "rus" (see CONVOS)."""
     rnd = random.Random(seed)
     app = "WhatsApp" if style == "whatsapp" else "Messages"
     render_style = ("imessage-dark" if style.endswith("-dark")
@@ -448,7 +508,7 @@ def make(out: Path, style: str, seed: int = 1, corrupt: bool = True, sidecar: st
     folder.mkdir(parents=True, exist_ok=True)
     ios26 = style.startswith("ios26")
     tall, expected, bg = render_chat(render_style, rounds=2 if ios26 else 1, pictures=ios26, ghost=ghost, photo=photo,
-                                     long=long)
+                                     long=long, language=language)
     ch = (IPAD_H if style.startswith("ipad") else H) - HEADER - FOOTER
     tops, t = [], tall.height - ch
     ly0 = tall.info["long"][0] if long else None

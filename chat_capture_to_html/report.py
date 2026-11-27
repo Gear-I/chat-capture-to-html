@@ -185,6 +185,8 @@ def render(res: ChatResult, out_path: Path, me: str, them: str) -> str:
                 f"chat \u201c{recorded['ConversationPartner']}\u201d" if recorded.get("ConversationPartner") else ""]
         devices_html += f"<dt>Recorded</dt><dd>{e(', '.join(b for b in bits if b))} (from the .case.json files)</dd>"
 
+    # file names go into a <script> block: escape "<" so no text can close it
+    shots_js = json.dumps(shot_json).replace("<", "\\u003c")
     setup_rows = getattr(res, "ocr_setup", [])
     ocr_setup = ('<dt>OCR setup</dt><dd><ul class="setup">'
                  + "".join(f"<li>{e(k)}: <code>{e(v)}</code></li>" for k, v in setup_rows)
@@ -250,7 +252,7 @@ tr.bad td{{color:var(--bad)}}
 {devices_html}
 <dt>Screenshots</dt><dd>{len(shots)} ({n_ok} hash-verified)</dd>
 <dt>Captured</dt><dd>{e(span)}</dd>
-<dt>Senders</dt><dd>right-hand bubbles = {e(me)}; left-hand bubbles = {e(them)}</dd>
+<dt>Senders</dt><dd>right-hand bubbles = {e(me)}; left-hand bubbles = {e(them)} (by the side the app shows a bubble on, not by who typed it)</dd>
 <dt>OCR</dt><dd>{e(res.ocr_engine) + ", offline" if res.text_read else "off (--no-ocr): each message is shown as it appears in its screenshot"}</dd>
 {ocr_setup}
 <dt>Generated</dt><dd>{e(generated)} by chat-capture-to-html {__version__}</dd>
@@ -263,14 +265,14 @@ tr.bad td{{color:var(--bad)}}
 </div>
 <h2>Bubble colours</h2><div class="card"><ul>{legend or "<li>none</li>"}</ul></div>
 <h2>Screenshots and hashes</h2>
-<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE (or ALEX) wrote in the .txt or .case.json file at capture time. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.{CAPTION_NOTE if any(getattr(s, "caption", None) for s in shots) else ""}</p>
+<p class="foot">“Computed” is the SHA-256 of the PNG file now; “Recorded” is the value UFADE (or ALEX) wrote in the .txt or .case.json file at capture time. A match shows that the file is unchanged since that value was recorded; it does not by itself show that the screenshot is authentic or that the chat is complete. Chat area used: rows {res.content_top}–{res.content_bottom}, columns {res.chat_left}–{res.chat_right}.{CAPTION_NOTE if any(getattr(s, "caption", None) for s in shots) else ""}</p>
 <div class="tw"><table><thead><tr><th></th><th>File</th><th>Computed SHA-256</th><th>Recorded SHA-256 (from)</th><th>Check</th><th>Placement</th></tr></thead>
 <tbody>{"".join(shot_rows)}</tbody></table></div>
 {f'<h2>Hash files without a screenshot</h2><ul>{orphans}</ul>' if orphans else ""}
 </main>
 <div id="lb" role="dialog" aria-modal="true"><button aria-label="Close">×</button><figure><div class="wrap"><img alt=""><div class="box"></div></div><figcaption></figcaption></figure></div>
 <script>
-const SHOTS={json.dumps(shot_json)};
+const SHOTS={shots_js};
 const lb=document.getElementById('lb'),img=lb.querySelector('img'),box=lb.querySelector('.box'),cap=lb.querySelector('figcaption');
 function show(i,b){{const s=SHOTS[i];img.src=s.href;cap.innerHTML='';
 const a=document.createElement('a');a.href=s.href;a.textContent=s.name;a.style.color='#fff';a.target='_blank';
@@ -329,10 +331,6 @@ def render_index(items, out_path: Path) -> str:
         sections.append(f"<h2>{title}</h2><div class=\"tw\"><table><thead><tr><th>App</th><th>Chat</th>"
                         f"<th>Screenshots</th><th>Verified</th><th>Messages</th><th>Gaps</th></tr></thead>"
                         f"<tbody>{''.join(rows)}</tbody></table></div>")
-    setup_rows = getattr(res, "ocr_setup", [])
-    ocr_setup = ('<dt>OCR setup</dt><dd><ul class="setup">'
-                 + "".join(f"<li>{e(k)}: <code>{e(v)}</code></li>" for k, v in setup_rows)
-                 + "</ul></dd>") if setup_rows else ""
     generated = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

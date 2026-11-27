@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -163,11 +165,24 @@ def build_chat(cap: Capture, engine, top: int | None = None, bottom: int | None 
         if not s.verified and not include_unverified:
             infos[i].skip_reason = f"hash {s.status}; excluded (--verified-only)"
             continue
+        # Read the file once and decode exactly those bytes, after checking they are
+        # the bytes that were hashed: a file changed since then is not analysed.
         try:
-            with Image.open(s.path) as im:
+            data = s.path.read_bytes()
+        except OSError as e:
+            infos[i].skip_reason = f"cannot read the file: {e}"
+            warnings.append(f"{s.path.name}: skipped, cannot be read ({e})")
+            continue
+        if hashlib.sha256(data).hexdigest() != s.sha256:
+            infos[i].skip_reason = "the file changed after it was hashed; not analysed"
+            warnings.append(f"{s.path.name}: skipped, the file changed after it was hashed")
+            continue
+        try:
+            with Image.open(io.BytesIO(data)) as im:
                 arr = np.asarray(im.convert("RGB"))
-        except Exception as e:  # noqa: BLE001 - any decode failure just skips the shot
+        except Exception as e:  # noqa: BLE001 - any decode failure skips the shot, and says so
             infos[i].skip_reason = f"cannot decode PNG: {e}"
+            warnings.append(f"{s.path.name}: skipped, cannot be decoded as a PNG image")
             continue
         infos[i].height, infos[i].width = arr.shape[:2]
         images[i] = arr

@@ -38,8 +38,12 @@ class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"chat-capture-to-html {__version__}")
-        self.geometry("1040x700")
-        self.minsize(900, 560)
+        # Fit the screen: with display scaling (150 % on a 1080p screen, say) a fixed
+        # 700 points would run past the taskbar.
+        scale = getattr(self, "_get_window_scaling", lambda: 1.0)() or 1.0
+        room = int(self.winfo_screenheight() / scale) - 110
+        self.geometry(f"1040x{max(480, min(700, room))}")
+        self.minsize(900, 480)
         set_icon(self)  # on Windows through iconbitmap, which also keeps CustomTkinter's own icon away
         self.font = ctk.CTkFont(size=14)
         self.big = ctk.CTkFont(size=15, weight="bold")
@@ -174,6 +178,12 @@ class App(ctk.CTk):
     # -------------------------------------------------------------- step 2
     def show_options(self) -> None:
         self._clear("Step 2 of 3: options")
+        # The options scroll when the window is short (a small screen, or display
+        # scaling); the error line and the buttons below them stay in view.
+        self.form = ctk.CTkScrollableFrame(self.page, fg_color=MAIN, corner_radius=0)
+        self.form.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        self.form.grid_columnconfigure(1, weight=1)
+        self.page.grid_rowconfigure(0, weight=1)
         s = self.s
         no_ocr, verified, diagnose = ctk.BooleanVar(value=s.no_ocr), ctk.BooleanVar(value=s.verified_only), \
             ctk.BooleanVar(value=s.diagnose)
@@ -184,25 +194,24 @@ class App(ctk.CTk):
                                    "captions are then not matched to messages."),
                 (verified, "Only verified shots", "Leave out screenshots whose hash does not verify."),
                 (diagnose, "Diagnose", "Also print how the screenshots were lined up (numbers only).")):
-            ctk.CTkSwitch(self.page, text=text, variable=var, font=self.font, width=200).grid(
+            ctk.CTkSwitch(self.form, text=text, variable=var, font=self.font, width=200).grid(
                 row=r, column=0, padx=(10, 20), pady=8, sticky="w")
-            ctk.CTkLabel(self.page, text=note, font=self.font, anchor="w", justify="left",
+            ctk.CTkLabel(self.form, text=note, font=self.font, anchor="w", justify="left",
                          wraplength=440).grid(row=r, column=1, sticky="w")
             r += 1
         for var, text, note in (
                 (me, "Right-hand bubbles", "Label for the device owner's side."),
                 (them, "Left-hand bubbles", "Empty: the chat folder name.")):
-            ctk.CTkLabel(self.page, text=text, font=self.font, anchor="w").grid(
+            ctk.CTkLabel(self.form, text=text, font=self.font, anchor="w").grid(
                 row=r, column=0, padx=(10, 20), pady=(10, 0), sticky="w")
-            ctk.CTkEntry(self.page, textvariable=var, font=self.font).grid(
+            ctk.CTkEntry(self.form, textvariable=var, font=self.font).grid(
                 row=r, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
-            ctk.CTkLabel(self.page, text=note, text_color=FAINT, font=self.font, anchor="w").grid(
+            ctk.CTkLabel(self.form, text=note, text_color=FAINT, font=self.font, anchor="w").grid(
                 row=r + 1, column=1, sticky="w")
             r += 2
         r = self._language_picker(r, lang)
         self.error = ctk.CTkLabel(self.page, text="", text_color=BAD, font=self.font, wraplength=640, anchor="w")
-        self.error.grid(row=r, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 0))
-        self.page.grid_rowconfigure(r + 1, weight=1)
+        self.error.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 0))
 
         def keep() -> None:
             s.no_ocr, s.verified_only, s.diagnose = no_ocr.get(), verified.get(), diagnose.get()
@@ -221,7 +230,7 @@ class App(ctk.CTk):
             self.show_run()
 
         bar = ctk.CTkFrame(self.page, fg_color=MAIN)
-        bar.grid(row=r + 2, column=0, columnspan=2, sticky="e", padx=10, pady=10)
+        bar.grid(row=2, column=0, columnspan=2, sticky="e", padx=10, pady=10)
         ctk.CTkButton(bar, text="Back", command=back, font=self.font, fg_color="#3a3f45").pack(side="left", padx=6)
         ctk.CTkButton(bar, text="Run", command=run, font=self.font).pack(side="left")
 
@@ -236,18 +245,18 @@ class App(ctk.CTk):
         holds the chosen codes in their order (the first is preferred where
         they disagree). Ticking adds a language at the end, unticking removes
         it, and typing in the field updates the ticks. Returns the next row."""
-        ctk.CTkLabel(self.page, text="OCR languages", font=self.font, anchor="w").grid(
+        ctk.CTkLabel(self.form, text="OCR languages", font=self.font, anchor="w").grid(
             row=r, column=0, padx=(10, 20), pady=(10, 0), sticky="nw")
         installed = self._languages()
         if installed is None:
-            ctk.CTkLabel(self.page, text="Tesseract not found. Install it with the languages you need (see the "
+            ctk.CTkLabel(self.form, text="Tesseract not found. Install it with the languages you need (see the "
                          "README); without it the fallback reads Chinese and English characters only.",
                          font=self.font, text_color=BAD, anchor="w", justify="left", wraplength=440).grid(
                 row=r, column=1, sticky="w", pady=(10, 0))
             return r + 1
         if not lang.get().strip():
             lang.set(default_languages(installed))
-        box = ctk.CTkScrollableFrame(self.page, height=64, fg_color="#2a2a2a")
+        box = ctk.CTkScrollableFrame(self.form, height=64, fg_color="#2a2a2a")
         box.grid(row=r, column=1, sticky="ew", padx=(0, 10), pady=(10, 0))
         ticks: dict[str, ctk.BooleanVar] = {}
         busy = {"now": False}
@@ -282,9 +291,9 @@ class App(ctk.CTk):
             self.lang_boxes[code].grid(row=i // 3, column=i % 3, sticky="w", padx=6, pady=2)
         lang.trace_add("write", typed)
         self.lang_var = lang
-        ctk.CTkEntry(self.page, textvariable=lang, font=self.font).grid(
+        ctk.CTkEntry(self.form, textvariable=lang, font=self.font).grid(
             row=r + 1, column=1, sticky="ew", padx=(0, 10), pady=(6, 0))
-        ctk.CTkLabel(self.page, text="In this order; the first is preferred where they disagree. "
+        ctk.CTkLabel(self.form, text="In this order; the first is preferred where they disagree. "
                      "Tick or untick, or type the codes (e.g. deu+eng).", text_color=FAINT, font=self.font,
                      anchor="w", justify="left", wraplength=440).grid(row=r + 2, column=1, sticky="w")
         return r + 3

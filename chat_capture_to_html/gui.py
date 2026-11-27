@@ -22,7 +22,7 @@ from . import __version__
 
 RESULTS = {
     0: "Done. Every screenshot matched its SHA-256 hash.",
-    2: "Done, with hash problems: see the Warnings at the top of the report.",
+    2: "Done, with problems (a hash, a device mix-up or a skipped screenshot): see the Warnings at the top of the report.",
     3: "OCR could not start: see the log above. Install Tesseract with the language data, or tick “No OCR”.",
 }
 

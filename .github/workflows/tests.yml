@@ -41,7 +41,7 @@ jobs:
       - name: Install Tesseract with German and English
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng fonts-dejavu-core xvfb xauth
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-spa tesseract-ocr-rus fonts-dejavu-core xvfb xauth
           tesseract --version
           tesseract --list-langs
 

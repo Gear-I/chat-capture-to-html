@@ -76,7 +76,7 @@ def test_window_runs_and_reports(tmp_path):
         while str(w["run_button"].cget("state")) == "disabled" and time.time() < deadline:
             root.update()
             time.sleep(0.05)
-        assert "hash problems" in w["status"].get()
+        assert "with problems" in w["status"].get()
         assert "1 report(s) written" in w["status"].get()
         assert str(w["open_button"].cget("state")) == "normal"
         assert "messages ->" in w["log"].get("1.0", "end")
@@ -183,7 +183,7 @@ def test_language_picker_without_tesseract(tmp_path, monkeypatch):
     app = gui_ctk.App()
     try:
         app.show_options()
-        texts = [w.cget("text") for w in app.page.winfo_children() if isinstance(w, gui_ctk.ctk.CTkLabel)]
+        texts = [w.cget("text") for w in app.form.winfo_children() if isinstance(w, gui_ctk.ctk.CTkLabel)]
         assert any(t.startswith("Tesseract not found") for t in texts)
     finally:
         app.destroy()

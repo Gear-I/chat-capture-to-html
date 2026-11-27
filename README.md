@@ -22,7 +22,9 @@ Turns a UFADE Chat capture folder into a readable chat HTML report. OCRs each sc
 
    At the end is a table of all screenshots with their computed and recorded hashes. Screenshots are linked, not copied or embedded, so the report never holds an altered copy of the evidence.
 
-The exit code is `2` when any hash fails, a hash file is orphaned, or a chat folder mixes devices, `3` when OCR cannot start (no engine, missing Tesseract language data, or languages the engine cannot read), and `0` otherwise.
+The report is never written into a capture folder: an `-o` inside one, or running from inside one without `-o`, stops with a message before anything is written. A hash match shows that a screenshot is unchanged since its hash was recorded; it does not by itself show that the screenshot is authentic or the chat complete, and the report says so. Each screenshot is read once and only the bytes that were hashed are analysed: a file that changed after hashing is skipped and reported.
+
+The exit code is `2` when any hash fails, a hash file is orphaned, a chat folder mixes devices, or a screenshot is skipped (it cannot be read or decoded, has a different screen size, or changed after it was hashed), `3` when OCR cannot start (no engine, missing Tesseract language data, or languages the engine cannot read), and `0` otherwise.
 
 ## Install (Windows)
 
@@ -112,7 +114,7 @@ scripts/run.sh ~/captures/screenshots -o ~/reports --no-ocr --diagnose
 | `--python PY` | Python to build the environment with (default `python3`, 3.10 or later) |
 | `--no-venv` | Use that Python directly instead of `.venv`; it must already have the dependencies |
 
-It passes on the tool's exit code (`0`, `2` for a hash problem, `3` when OCR cannot start), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
+It passes on the tool's exit code (`0`, `2` for a hash problem or a skipped screenshot, `3` when OCR cannot start), so it can be used in other scripts. For OCR, install Tesseract with your package manager first, for example `sudo apt install tesseract-ocr tesseract-ocr-deu` or `brew install tesseract tesseract-lang`, or use `--no-ocr`.
 
 ## Device information (`.case.json` files)
 

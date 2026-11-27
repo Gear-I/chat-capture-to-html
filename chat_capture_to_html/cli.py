@@ -111,6 +111,12 @@ def main(argv: list[str] | None = None) -> int:
         out_dir, out_file = a.output.parent, a.output
     else:
         out_dir, out_file = a.output, None
+    out_r = out_dir.resolve()
+    for f in folders:  # never write into a capture folder (CLAUDE.md 2.1): refuse before anything is written
+        f_r = f.resolve()
+        if out_r == f_r or f_r in out_r.parents:
+            p.error(f"the report would be written into the capture folder {f}; choose a reports folder outside "
+                    "it with -o (the evidence folder must stay as UFADE or ALEX wrote it)")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     worst = 0
@@ -139,11 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         while target in written:  # two capture folders with the same app and chat name
             target = out_dir / f"{_safe(cap.app)}_{_safe(cap.chat)}_{n}.html"
             n += 1
-        if folder.resolve() in target.resolve().parents:
-            say("  ! writing the report inside the evidence folder")
         res = build_chat(cap, engine, a.top, a.bottom, include_unverified=not a.verified_only, progress=lambda s: say("  " + s),
                          left=a.left, right=a.right)
         target.write_text(render(res, target, a.me, a.them or cap.chat), encoding="utf-8")
+        if any(not i.used for i in res.shots):  # a screenshot left out (not decodable, other size, changed): CLAUDE.md 2.3
+            worst = 2
         say(f"  {sum(1 for m in res.messages if m.kind == 'bubble')} messages -> {target}")
         n_cut = sum(1 for m in res.messages if m.kind == "bubble" and m.cut)
         if n_cut:
